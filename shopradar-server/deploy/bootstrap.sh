@@ -13,8 +13,27 @@ CERT_EMAIL="${CERTBOT_EMAIL:-}"
 
 echo "==> ShopRadar bootstrap | dir=$APP_DIR | domain=$DOMAIN"
 
+# 常见误传：整包 ShopRadar 根目录 → server.js 在 shopradar-server/ 子目录
+if [[ ! -f "$APP_DIR/server.js" && -f "$APP_DIR/shopradar-server/server.js" ]]; then
+  echo "==> 检测到误传整仓：server.js 在 shopradar-server/ 内，正在展平后端文件..."
+  shopt -s dotglob
+  for item in "$APP_DIR/shopradar-server"/*; do
+    base=$(basename "$item")
+    if [[ "$base" == "deploy" && -d "$APP_DIR/deploy" ]]; then
+      cp -a "$item/"* "$APP_DIR/deploy/" 2>/dev/null || true
+    else
+      mv -f "$item" "$APP_DIR/"
+    fi
+  done
+  rmdir "$APP_DIR/shopradar-server" 2>/dev/null || true
+  echo "==> 展平完成（Chrome 扩展文件仍在 $APP_DIR 可稍后删除，不影响 API）"
+fi
+
 if [[ ! -f "$APP_DIR/server.js" ]]; then
-  echo "ERROR: $APP_DIR/server.js 不存在，请先 SFTP 上传 shopradar-server 到该目录"
+  echo "ERROR: $APP_DIR/server.js 不存在。"
+  echo "  本机应对 shopradar-server 右键 SFTP: Upload Folder（不是 ShopRadar 根目录，也不是只传 deploy）。"
+  echo "  当前目录内容:"
+  ls -la "$APP_DIR" 2>/dev/null || true
   exit 1
 fi
 

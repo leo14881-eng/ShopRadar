@@ -1,0 +1,27 @@
+【只读这一页】Vultr 上传路径说明
+================================
+
+服务器目标目录（固定）:
+  /root/shopradar-backend/
+
+本机必须上传的文件夹（固定）:
+  ShopRadar/shopradar-server/     ← 右键 THIS 文件夹上传
+
+上传后服务器上应该是:
+  /root/shopradar-backend/server.js
+  /root/shopradar-backend/package.json
+  /root/shopradar-backend/.env
+  /root/shopradar-backend/deploy/bootstrap.sh
+
+错误示例（不要这样）:
+  × 右键 ShopRadar 根目录 Upload Project → 可能多一层子目录
+  × 只 scp deploy 文件夹 → 只有脚本，没有 server.js
+  × 上传到 /root/shopradar-backend/shopradar-server/server.js → bootstrap 旧版会报错（新版会自动展平）
+
+VS Code 操作:
+  1. 展开 shopradar-server
+  2. 右键 shopradar-server → SFTP: Upload Folder
+  3. 等待完成
+
+SSH 验证:
+  ls /root/shopradar-backend/server.js
