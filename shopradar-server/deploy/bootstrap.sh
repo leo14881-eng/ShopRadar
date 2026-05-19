@@ -20,6 +20,7 @@ command -v node >/dev/null || { curl -fsSL https://deb.nodesource.com/setup_20.x
 command -v pm2 >/dev/null || npm install -g pm2
 
 cd "$APP_DIR"
+chmod +x start.sh deploy/after-upload.sh 2>/dev/null || true
 # 勿上传本机 node_modules（Windows 二进制在 Linux 会报 invalid ELF header）
 rm -rf node_modules
 npm install --omit=dev
@@ -31,7 +32,7 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
 pm2 delete shopradar-api 2>/dev/null || true
-pm2 start server.js --name shopradar-api --cwd "$APP_DIR"
+pm2 start start.sh --name shopradar-api --interpreter bash --cwd "$APP_DIR"
 pm2 save
 
 if [[ -n "$CERT_EMAIL" ]]; then

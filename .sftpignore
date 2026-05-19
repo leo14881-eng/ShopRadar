@@ -1,0 +1,8 @@
+node_modules
+**/node_modules
+shopradar-server/node_modules
+**/node_modules/**
+database.sqlite
+**/.git/**
+.cursor
+.idea
