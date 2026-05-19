@@ -96,11 +96,12 @@ npm run package:store
 
 ### 3. Privacy（隐私）
 
-- **隐私政策 URL**（必填）：须可公网 HTTPS 访问，例如  
-  `https://shopradar.uk/privacy`  
-- 说明收集：`device_id`、访问的店铺域名、鉴权 API；用途：额度与 Pro；是否共享：Lemon Squeezy 支付等  
+- **隐私政策 URL**（必填）：部署后端后使用  
+  **`https://api.shopradar.uk/privacy`**  
+  （源码在 `shopradar-server/public/privacy.html`，随 API 一起 SFTP 上传）  
+- 根路径 `https://api.shopradar.uk/` 会自动跳转到 `/privacy`  
 
-可参考仓库内 `docs/PRIVACY_POLICY.template.md` 放到你官网。
+修改文案：编辑 `shopradar-server/public/privacy.html` 后重新上传并 `pm2 restart shopradar-api`。
 
 ### 4. Permissions justification（权限说明）
 

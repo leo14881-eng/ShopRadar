@@ -31,6 +31,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const FREE_DAILY_LIMIT = 3;
 const DB_PATH = path.join(__dirname, 'database.sqlite');
 const WHITELIST_PATH = path.join(__dirname, 'whitelist.json');
+const PUBLIC_DIR = path.join(__dirname, 'public');
 
 /** Lemon Squeezy 会回调的成功类事件 */
 const LEMON_PRO_EVENTS = new Set([
@@ -530,6 +531,14 @@ function startServer(db) {
     dbWriteQueue = run.catch(function () {});
     return run;
   }
+
+  app.get('/privacy', function (_req, res) {
+    res.sendFile(path.join(PUBLIC_DIR, 'privacy.html'));
+  });
+
+  app.get('/', function (_req, res) {
+    res.redirect(302, '/privacy');
+  });
 
   app.post('/api/check-limit', function (req, res) {
     const deviceId =
