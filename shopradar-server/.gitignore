@@ -2,6 +2,9 @@ node_modules/
 database.sqlite
 *.db-journal
 whitelist.json
+.token-secret
+.lemon-webhook-secret
+.lemon-webhook-verify
 bin/cloudflared.exe
 tunnel-url.txt
 ngrok-url.txt

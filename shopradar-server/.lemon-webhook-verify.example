@@ -1,0 +1,4 @@
+# 复制为 .lemon-webhook-verify（勿提交 git）
+# 0 = 关闭验签（默认，便于本地联调）
+# 1 = 开启验签（须同时配置 .lemon-webhook-secret）
+0

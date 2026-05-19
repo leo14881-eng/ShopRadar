@@ -11,6 +11,18 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
+const {
+  verifyAccessToken,
+  extractAccessTokenFromRequest,
+  attachAccessTokenToResult,
+} = require('./access-token');
+const {
+  isLemonWebhookSecretConfigured,
+  isLemonWebhookVerifyEnabled,
+  assertLemonWebhookVerified,
+} = require('./lemon-webhook');
+
+const LEMON_WEBHOOK_PATH = '/api/webhook/lemon-squeezy';
 
 const PORT = Number(process.env.PORT) || 3000;
 const FREE_DAILY_LIMIT = 3;
@@ -32,7 +44,17 @@ const LIMIT_EXCEEDED_MSG =
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: '512kb' }));
+app.use(
+  express.json({
+    limit: '512kb',
+    verify: function (req, _res, buf) {
+      const pathOnly = String(req.originalUrl || req.url || '').split('?')[0];
+      if (pathOnly === LEMON_WEBHOOK_PATH) {
+        req.rawBody = buf;
+      }
+    },
+  })
+);
 
 /** 内存中的白名单（修改 whitelist.json 后每次请求重读） */
 let whitelistCache = { ips: [], deviceIds: [] };
@@ -154,6 +176,66 @@ function dbRun(db, sql, params) {
 
 function isProRow(row) {
   return Boolean(row && Number(row.is_pro) === 1);
+}
+
+function computeFreeRemaining(row, today) {
+  if (!row || row.last_query_date !== today) {
+    return FREE_DAILY_LIMIT;
+  }
+  return Math.max(0, FREE_DAILY_LIMIT - Number(row.count || 0));
+}
+
+/**
+ * 持有有效短期 token 时：刷新会话、不重复扣当日免费次数；isPro 仍以数据库为准
+ */
+async function handleCheckLimitFromSession(db, req, deviceId, domain) {
+  const white = isWhitelisted(req, deviceId);
+  if (white.hit) {
+    return {
+      allowed: true,
+      remaining: 999,
+      isPro: false,
+      whitelisted: true,
+      whitelistBy: white.by,
+      domain: domain,
+      sessionRenewed: true,
+    };
+  }
+
+  const today = getTodayDateString();
+  const row = await dbGet(
+    db,
+    'SELECT device_id, count, last_query_date, is_pro FROM users WHERE device_id = ?',
+    [deviceId]
+  );
+
+  if (row && isProRow(row)) {
+    return {
+      allowed: true,
+      remaining: 999,
+      isPro: true,
+      domain: domain,
+      sessionRenewed: true,
+    };
+  }
+
+  if (row && row.last_query_date === today && Number(row.count) >= FREE_DAILY_LIMIT) {
+    return {
+      allowed: false,
+      isPro: false,
+      remaining: 0,
+      msg: LIMIT_EXCEEDED_MSG,
+      domain: domain,
+    };
+  }
+
+  return {
+    allowed: true,
+    remaining: computeFreeRemaining(row, today),
+    isPro: false,
+    domain: domain,
+    sessionRenewed: true,
+  };
 }
 
 /**
@@ -321,7 +403,8 @@ async function handleCheckLimit(db, req, deviceId, domain) {
     return {
       allowed: true,
       remaining: 999,
-      isPro: true,
+      /** 白名单仅免额度，不等于已付费 Pro（导出仍须 is_pro=1） */
+      isPro: false,
       whitelisted: true,
       whitelistBy: white.by,
       domain: domain,
@@ -454,10 +537,19 @@ function startServer(db) {
     loadWhitelist();
     const clientIp = getClientIp(req);
 
+    const accessToken = extractAccessTokenFromRequest(req);
+    const tokenVerified =
+      accessToken &&
+      verifyAccessToken(accessToken, deviceId).valid;
+
     enqueueDbWrite(function () {
+      if (tokenVerified) {
+        return handleCheckLimitFromSession(db, req, deviceId, domain);
+      }
       return handleCheckLimit(db, req, deviceId, domain);
     })
       .then(function (result) {
+        attachAccessTokenToResult(result, deviceId);
         if (result.isPro) {
           console.log(
             '[ShopRadar Server] ✓ Pro 会员放行 | deviceId=' + deviceId
@@ -510,13 +602,40 @@ function startServer(db) {
       return res.status(400).json({ isPro: false, msg: '缺少 deviceId' });
     }
 
+    const accessToken = extractAccessTokenFromRequest(req);
+    if (accessToken) {
+      const check = verifyAccessToken(accessToken, deviceId);
+      if (!check.valid) {
+        return res.status(401).json({
+          isPro: false,
+          deviceId: deviceId,
+          tokenValid: false,
+          msg: '访问令牌无效或已过期',
+        });
+      }
+    }
+
     dbGet(
       db,
       'SELECT is_pro FROM users WHERE device_id = ?',
       [deviceId]
     )
       .then(function (row) {
-        res.json({ isPro: isProRow(row), deviceId: deviceId });
+        const isPro = isProRow(row);
+        const payload = { isPro: isPro, deviceId: deviceId };
+        if (accessToken) {
+          payload.tokenValid = true;
+        }
+        if (isPro) {
+          const enriched = attachAccessTokenToResult(
+            { allowed: true, isPro: true },
+            deviceId
+          );
+          payload.accessToken = enriched.accessToken;
+          payload.tokenExpiresIn = enriched.tokenExpiresIn;
+          payload.tokenExpiresAt = enriched.tokenExpiresAt;
+        }
+        res.json(payload);
       })
       .catch(function (error) {
         console.error('[ShopRadar Server] pro-status 失败:', error);
@@ -524,7 +643,78 @@ function startServer(db) {
       });
   });
 
+  app.post('/api/verify-export', function (req, res) {
+    const deviceId =
+      req.body && req.body.deviceId ? String(req.body.deviceId).trim() : '';
+    const accessToken = extractAccessTokenFromRequest(req);
+
+    if (!deviceId) {
+      return res.status(400).json({
+        exportAllowed: false,
+        msg: '缺少 deviceId',
+      });
+    }
+
+    if (!accessToken) {
+      return res.status(401).json({
+        exportAllowed: false,
+        msg: '缺少 accessToken',
+      });
+    }
+
+    const check = verifyAccessToken(accessToken, deviceId);
+    if (!check.valid) {
+      return res.status(401).json({
+        exportAllowed: false,
+        msg: '访问令牌无效或已过期',
+      });
+    }
+
+    dbGet(
+      db,
+      'SELECT is_pro FROM users WHERE device_id = ?',
+      [deviceId]
+    )
+      .then(function (row) {
+        const isPro = isProRow(row);
+        if (!isPro) {
+          return res.status(403).json({
+            exportAllowed: false,
+            isPro: false,
+            msg: '需要 Pro 会员',
+          });
+        }
+        const enriched = attachAccessTokenToResult(
+          { allowed: true, isPro: true },
+          deviceId
+        );
+        res.json({
+          exportAllowed: true,
+          isPro: true,
+          accessToken: enriched.accessToken,
+          tokenExpiresIn: enriched.tokenExpiresIn,
+        });
+      })
+      .catch(function (error) {
+        console.error('[ShopRadar Server] verify-export 失败:', error);
+        res.status(500).json({ exportAllowed: false, msg: '服务器内部错误' });
+      });
+  });
+
   app.post('/api/webhook/lemon-squeezy', function (req, res) {
+    const verifyResult = assertLemonWebhookVerified(req);
+    if (!verifyResult.ok) {
+      if (verifyResult.status === 401) {
+        console.warn('[ShopRadar Server] Lemon Webhook 验签失败');
+      } else {
+        console.error('[ShopRadar Server] Lemon Webhook 验签未就绪:', verifyResult.msg);
+      }
+      return res.status(verifyResult.status || 401).json({
+        ok: false,
+        msg: verifyResult.msg || 'webhook verification failed',
+      });
+    }
+
     const body = req.body || {};
     const eventName = getLemonEventName(body);
 
@@ -556,7 +746,7 @@ function startServer(db) {
   });
 
   app.get('/api/health', function (_req, res) {
-    res.json({ ok: true, service: 'shopradar-server', version: '1.1.0' });
+    res.json({ ok: true, service: 'shopradar-server', version: '1.2.0' });
   });
 
   app.get('/api/my-ip', function (req, res) {
@@ -571,6 +761,7 @@ function startServer(db) {
     console.log('[ShopRadar Server] POST /api/check-limit');
     console.log('[ShopRadar Server] POST /api/webhook/lemon-squeezy');
     console.log('[ShopRadar Server] GET  /api/pro-status?deviceId=...');
+    console.log('[ShopRadar Server] POST /api/verify-export');
     console.log(
       '[ShopRadar Server] 白名单:',
       whitelistCache.ips.length,
@@ -578,6 +769,19 @@ function startServer(db) {
       whitelistCache.deviceIds.length,
       '个 deviceId'
     );
+    if (isLemonWebhookVerifyEnabled()) {
+      if (isLemonWebhookSecretConfigured()) {
+        console.log('[ShopRadar Server] Lemon Webhook 验签: 已启用');
+      } else {
+        console.warn(
+          '[ShopRadar Server] Lemon Webhook 验签: 已开启但未配置 SHOPRADAR_LEMON_WEBHOOK_SECRET'
+        );
+      }
+    } else {
+      console.warn(
+        '[ShopRadar Server] Lemon Webhook 验签: 已关闭。启用请将 .lemon-webhook-verify 改为 1'
+      );
+    }
   });
 }
 
@@ -597,4 +801,4 @@ initDatabase()
     console.error('[ShopRadar Server] 数据库初始化失败:', error);
     process.exit(1);
   });
-
+

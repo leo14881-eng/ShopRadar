@@ -18,6 +18,22 @@ npm start
 
 默认 `http://localhost:3000`。扩展内鉴权 API 指向该地址（上线前需改 `popup.js` 中的 `AUTH_API_*`）。
 
+**本地密钥（方案 B，推荐）** — 均在 `shopradar-server/` 下，已 gitignore：
+
+```bash
+cd shopradar-server
+npm run setup-secrets   # 生成 .token-secret、.lemon-webhook-* 模板
+npm start
+```
+
+| 文件 | 作用 |
+|------|------|
+| `.token-secret` | 访问令牌签名密钥（脚本可自动生成） |
+| `.lemon-webhook-secret` | Lemon Signing secret（**6–40 字符**；`npm run rotate-lemon-secret` 生成） |
+| `.lemon-webhook-verify` | `0` 关闭验签（默认），`1` 开启 |
+
+也可用环境变量覆盖（见 `*.example` 说明）。
+
 ## 配置
 
 - 复制 `lemon-checkout.config.example.js` 为 `lemon-checkout.config.js`，填入 Lemon Checkout 链接
