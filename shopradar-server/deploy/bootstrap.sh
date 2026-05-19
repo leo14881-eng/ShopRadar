@@ -1,89 +1,41 @@
 #!/usr/bin/env bash
-# ShopRadar 生产并网脚本（Vultr / Ubuntu）
-# 用法（SSH 登录 root 后）：
-#   export SHOPRADAR_DOMAIN=api.yourdomain.com
-#   export CERTBOT_EMAIL=you@yourdomain.com
-#   bash /root/shopradar-backend/deploy/bootstrap.sh
 set -euo pipefail
 
-APP_DIR="/root/shopradar-backend"
-NGINX_SITE="shopradar-api"
-DOMAIN="${SHOPRADAR_DOMAIN:-api.yourdomain.com}"
+APP_DIR="/root/shopradar-backend/shopradar-server"
+DEPLOY_DIR="$APP_DIR/deploy"
+DOMAIN="${SHOPRADAR_DOMAIN:-api.shopradar.uk}"
 CERT_EMAIL="${CERTBOT_EMAIL:-}"
+NGINX_SITE="shopradar-api"
 
-echo "==> ShopRadar bootstrap | dir=$APP_DIR | domain=$DOMAIN"
+echo "==> ShopRadar | $APP_DIR | $DOMAIN"
 
-# 常见误传：整包 ShopRadar 根目录 → server.js 在 shopradar-server/ 子目录
-if [[ ! -f "$APP_DIR/server.js" && -f "$APP_DIR/shopradar-server/server.js" ]]; then
-  echo "==> 检测到误传整仓：server.js 在 shopradar-server/ 内，正在展平后端文件..."
-  shopt -s dotglob
-  for item in "$APP_DIR/shopradar-server"/*; do
-    base=$(basename "$item")
-    if [[ "$base" == "deploy" && -d "$APP_DIR/deploy" ]]; then
-      cp -a "$item/"* "$APP_DIR/deploy/" 2>/dev/null || true
-    else
-      mv -f "$item" "$APP_DIR/"
-    fi
-  done
-  rmdir "$APP_DIR/shopradar-server" 2>/dev/null || true
-  echo "==> 展平完成（Chrome 扩展文件仍在 $APP_DIR 可稍后删除，不影响 API）"
-fi
-
-if [[ ! -f "$APP_DIR/server.js" ]]; then
-  echo "ERROR: $APP_DIR/server.js 不存在。"
-  echo "  本机应对 shopradar-server 右键 SFTP: Upload Folder（不是 ShopRadar 根目录，也不是只传 deploy）。"
-  echo "  当前目录内容:"
-  ls -la "$APP_DIR" 2>/dev/null || true
-  exit 1
-fi
-
-if [[ ! -f "$APP_DIR/.env" ]]; then
-  echo "ERROR: 缺少 $APP_DIR/.env ，请在本机填好密钥后上传"
-  exit 1
-fi
-
-if grep -q 'your_live_webhook_secret\|your_production_jwt_secret' "$APP_DIR/.env"; then
-  echo "ERROR: .env 仍为占位符，请先填入真实生产密钥"
-  exit 1
-fi
+test -f "$APP_DIR/server.js" || { echo "缺少 $APP_DIR/server.js，请先 Upload Project"; exit 1; }
+test -f "$APP_DIR/.env" || { echo "缺少 $APP_DIR/.env"; exit 1; }
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl ca-certificates gnupg nginx certbot python3-certbot-nginx
+apt-get install -y -qq curl nginx certbot python3-certbot-nginx
 
-if ! command -v node >/dev/null 2>&1; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  apt-get install -y -qq nodejs
-fi
-
-if ! command -v pm2 >/dev/null 2>&1; then
-  npm install -g pm2
-fi
+command -v node >/dev/null || { curl -fsSL https://deb.nodesource.com/setup_20.x | bash -; apt-get install -y -qq nodejs; }
+command -v pm2 >/dev/null || npm install -g pm2
 
 cd "$APP_DIR"
+# 勿上传本机 node_modules（Windows 二进制在 Linux 会报 invalid ELF header）
+rm -rf node_modules
 npm install --omit=dev
 
-cp "$APP_DIR/deploy/nginx.conf" "/etc/nginx/sites-available/$NGINX_SITE"
-sed -i "s/api.yourdomain.com/$DOMAIN/g" "/etc/nginx/sites-available/$NGINX_SITE"
+cp "$DEPLOY_DIR/nginx.conf" "/etc/nginx/sites-available/$NGINX_SITE"
+sed -i "s/^[[:space:]]*server_name .*/    server_name $DOMAIN;/" "/etc/nginx/sites-available/$NGINX_SITE"
 ln -sf "/etc/nginx/sites-available/$NGINX_SITE" "/etc/nginx/sites-enabled/$NGINX_SITE"
 rm -f /etc/nginx/sites-enabled/default
-nginx -t
-systemctl enable nginx
-systemctl reload nginx
+nginx -t && systemctl reload nginx
 
 pm2 delete shopradar-api 2>/dev/null || true
-pm2 start "$APP_DIR/server.js" --name shopradar-api --cwd "$APP_DIR"
+pm2 start server.js --name shopradar-api --cwd "$APP_DIR"
 pm2 save
-pm2 startup systemd -u root --hp /root | bash || true
 
-if [[ -n "$CERT_EMAIL" && "$DOMAIN" != "api.yourdomain.com" ]]; then
-  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$CERT_EMAIL" --redirect
-  systemctl reload nginx
-  echo "==> HTTPS 已申请: https://$DOMAIN"
-else
-  echo "==> 跳过 Certbot（请设置 SHOPRADAR_DOMAIN 与 CERTBOT_EMAIL 后重新运行 certbot）"
-  echo "    certbot --nginx -d $DOMAIN -m your@email.com --agree-tos"
+if [[ -n "$CERT_EMAIL" ]]; then
+  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$CERT_EMAIL" --redirect || true
 fi
 
-echo "==> 完成。健康检查: curl -s http://127.0.0.1:3000/api/health"
-curl -sf "http://127.0.0.1:3000/api/health" && echo "" || echo "WARN: 本地 3000 未响应，请 pm2 logs shopradar-api"
+curl -sf "http://127.0.0.1:3000/api/health" && echo " OK" || pm2 logs shopradar-api --lines 20

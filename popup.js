@@ -105,10 +105,16 @@ const MSG_REFRESH_SHOP_TAB = 'REFRESH_SHOP_TAB';
 /** 缓存超过该时长则 Popup 打开时强制触发后台刷新 */
 const CACHE_STALE_MS = 60 * 1000;
 
-/** 本地鉴权 API（需先启动 shopradar-server） */
-const AUTH_API_CHECK_LIMIT = 'http://localhost:3000/api/check-limit';
-const AUTH_API_PRO_STATUS = 'http://localhost:3000/api/pro-status';
-const AUTH_API_VERIFY_EXPORT = 'http://localhost:3000/api/verify-export';
+/** true = 线上 Vultr；false = 本机 shopradar-server（npm start） */
+const USE_PROD_API = true;
+
+const AUTH_API_BASE = USE_PROD_API
+  ? 'https://api.shopradar.uk'
+  : 'http://localhost:3000';
+
+const AUTH_API_CHECK_LIMIT = AUTH_API_BASE + '/api/check-limit';
+const AUTH_API_PRO_STATUS = AUTH_API_BASE + '/api/pro-status';
+const AUTH_API_VERIFY_EXPORT = AUTH_API_BASE + '/api/verify-export';
 
 /** Lemon 结账链接：在 lemon-checkout.config.js 中配置 SHOPRADAR_LEMON_CHECKOUT_URL */
 const LEMON_SQUEEZY_CHECKOUT_URL =
