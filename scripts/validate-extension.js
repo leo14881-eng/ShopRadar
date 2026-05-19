@@ -187,6 +187,23 @@ function checkSfccInjectionPattern() {
   }
 }
 
+function checkManifestIcons() {
+  const manifest = JSON.parse(readFile('manifest.json'));
+  if (!manifest.icons || !manifest.icons['128']) {
+    fail('manifest.json 缺少 icons（Chrome 商店必需）');
+    return;
+  }
+  ['16', '48', '128'].forEach(function (size) {
+    const rel = manifest.icons[size];
+    if (!rel || !fs.existsSync(path.join(ROOT, rel))) {
+      fail('缺少图标文件: ' + rel);
+    }
+  });
+  if (!failed) {
+    ok('manifest icons 完整');
+  }
+}
+
 function checkPopupScripts() {
   const html = readFile('popup.html');
   const required = [
@@ -222,6 +239,7 @@ function checkBackgroundSize() {
 console.log('ShopRadar 扩展校验\n');
 
 checkManifest();
+checkManifestIcons();
 EXTENSION_JS_FILES.forEach(checkSyntax);
 checkBackgroundBuildFresh();
 checkBackgroundNoImportScripts();

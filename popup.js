@@ -105,12 +105,21 @@ const MSG_REFRESH_SHOP_TAB = 'REFRESH_SHOP_TAB';
 /** 缓存超过该时长则 Popup 打开时强制触发后台刷新 */
 const CACHE_STALE_MS = 60 * 1000;
 
-/** true = 线上 Vultr；false = 本机 shopradar-server（npm start） */
-const USE_PROD_API = true;
+const EXT_CFG =
+  typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined'
+    ? SHOPRADAR_EXTENSION_CONFIG
+    : { apiBase: 'https://api.shopradar.uk', debug: false };
 
-const AUTH_API_BASE = USE_PROD_API
-  ? 'https://api.shopradar.uk'
-  : 'http://localhost:3000';
+const AUTH_API_BASE = String(EXT_CFG.apiBase || 'https://api.shopradar.uk').replace(
+  /\/$/,
+  ''
+);
+
+function debugLog() {
+  if (EXT_CFG.debug) {
+    console.info.apply(console, arguments);
+  }
+}
 
 const AUTH_API_CHECK_LIMIT = AUTH_API_BASE + '/api/check-limit';
 const AUTH_API_PRO_STATUS = AUTH_API_BASE + '/api/pro-status';
@@ -331,13 +340,30 @@ function formatPrice(rawPrice, currencyCode) {
  * @returns {Promise<*>}
  */
 async function executeInMainWorld(tabId, func, args) {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: tabId },
-    world: 'MAIN',
-    func: func,
-    args: args || [],
-  });
-  return results[0]?.result;
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch (tabErr) {
+    return undefined;
+  }
+  if (!tab?.url || isRestrictedUrl(tab.url)) {
+    return undefined;
+  }
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      world: 'MAIN',
+      func: func,
+      args: args || [],
+    });
+    return results[0]?.result;
+  } catch (scriptErr) {
+    if (isBenignInjectError(scriptErr)) {
+      return undefined;
+    }
+    throw scriptErr;
+  }
 }
 
 /**
@@ -563,8 +589,8 @@ function showDeviceIdInPanel(deviceId) {
   if (deviceIdTextEl) {
     deviceIdTextEl.textContent = id || '—';
   }
-  console.info('[ShopRadar] 当前设备 ID (sr_device_id):', id);
-  console.info(
+  debugLog('[ShopRadar] 当前设备 ID (sr_device_id):', id);
+  debugLog(
     '[ShopRadar] 白名单：将上述 ID 填入 shopradar-server/whitelist.json 的 deviceIds 数组'
   );
 }
@@ -1403,12 +1429,31 @@ function fetchProductsInPageContext() {
  */
 function isRestrictedUrl(url) {
   if (!url) return true;
+  const u = String(url).trim().toLowerCase();
   return (
-    url.startsWith('chrome://') ||
-    url.startsWith('chrome-extension://') ||
-    url.startsWith('edge://') ||
-    url.startsWith('about:')
+    u.startsWith('chrome://') ||
+    u.startsWith('chrome-error://') ||
+    u.startsWith('chrome-extension://') ||
+    u.startsWith('edge://') ||
+    u.startsWith('edge-error://') ||
+    u.startsWith('about:') ||
+    u.startsWith('devtools://')
   );
+}
+
+/** 页面崩溃/无法打开等，注入必然失败，不必反复 warn */
+function isBenignInjectError(err) {
+  if (typeof ShopRadarGuard !== 'undefined' && ShopRadarGuard.isBenignInjectError) {
+    return ShopRadarGuard.isBenignInjectError(err);
+  }
+  return false;
+}
+
+function isBenignRuntimeError(err) {
+  if (typeof ShopRadarGuard !== 'undefined' && ShopRadarGuard.isBenignRuntimeError) {
+    return ShopRadarGuard.isBenignRuntimeError(err);
+  }
+  return isBenignInjectError(err);
 }
 
 /** 明显非独立站/电商的域名（跳过长时间检测与 products.json 探测） */
@@ -1669,8 +1714,13 @@ function clearFailStateRetries() {
  */
 function scheduleFailStateRetries() {
   clearFailStateRetries();
-  failStateRetryTimer = setInterval(() => {
+  failStateRetryTimer = setInterval(async () => {
     if (!stateFail.classList.contains('active')) {
+      clearFailStateRetries();
+      return;
+    }
+    const tab = await getActiveBrowserTab();
+    if (!tab?.url || isRestrictedUrl(tab.url)) {
       clearFailStateRetries();
       return;
     }
@@ -1756,7 +1806,9 @@ async function quickDetectStore(tab, options) {
   try {
     detection = await executeInMainWorld(tab.id, detectStoreInPage);
   } catch (injectErr) {
-    console.warn('[ShopRadar] quickDetect 注入失败:', injectErr);
+    if (!isBenignInjectError(injectErr)) {
+      console.warn('[ShopRadar] quickDetect 注入失败:', injectErr);
+    }
     const probedAfterInjectFail = await probeShopifyByProductsJson(domain, tab.id);
     if (probedAfterInjectFail) {
       await ShopRadarDetectionCache.clearNegative(domain);
@@ -2100,7 +2152,7 @@ async function runDetection(options) {
     const probedEarly = await probeShopifyByProductsJson(domain, tab.id);
     if (probedEarly) {
       await ShopRadarDetectionCache.clearNegative(domain);
-      console.info('[ShopRadar] products.json 优先探测确认为 Shopify');
+      debugLog('[ShopRadar] products.json 优先探测确认为 Shopify');
       return buildShopifyProbeDetection(domain, tab.id);
     }
 
@@ -2112,7 +2164,9 @@ async function runDetection(options) {
       try {
         detection = await executeInMainWorld(tab.id, detectStoreInPage);
       } catch (injectErr) {
-        console.warn('[ShopRadar] 页面注入检测失败，第', attempt + 1, '次:', injectErr);
+        if (!isBenignInjectError(injectErr)) {
+          console.warn('[ShopRadar] 页面注入检测失败，第', attempt + 1, '次:', injectErr);
+        }
       }
 
       const isShopify = Boolean(detection?.isShopify);
@@ -2124,7 +2178,7 @@ async function runDetection(options) {
         currentStoreType = 'shopify';
         applyShopActiveCurrency(detection?.currency);
         if (attempt > 0) {
-          console.info('[ShopRadar] 延迟检测成功，第', attempt + 1, '次');
+          debugLog('[ShopRadar] 延迟检测成功，第', attempt + 1, '次');
         }
         await ShopRadarDetectionCache.clearNegative(domain);
         return {
@@ -2165,7 +2219,7 @@ async function runDetection(options) {
     const probedLate = await probeShopifyByProductsJson(domain, tab.id);
     if (probedLate) {
       await ShopRadarDetectionCache.clearNegative(domain);
-      console.info('[ShopRadar] products.json 兜底探测确认为 Shopify');
+      debugLog('[ShopRadar] products.json 兜底探测确认为 Shopify');
       return buildShopifyProbeDetection(domain, tab.id);
     }
   }
@@ -2344,7 +2398,7 @@ async function resolveProductsJsonFetchUrl(tabId, host, cachedHref) {
   }
 
   const fetchUrl = ShopRadarUrl.buildProductsJsonFetchUrlForHost(host, referenceHref);
-  console.info('[ShopRadar] products.json URL:', fetchUrl);
+  debugLog('[ShopRadar] products.json URL:', fetchUrl);
   return fetchUrl;
 }
 
@@ -2500,7 +2554,7 @@ async function fetchProductsJson(domain, tabId) {
       const list = Array.isArray(rawJson?.products) ? rawJson.products : [];
       if (list.length > 0) {
         if (host !== domain) {
-          console.info('[ShopRadar] 使用备用域名抓取成功:', host);
+          debugLog('[ShopRadar] 使用备用域名抓取成功:', host);
         }
         return rawJson;
       }
@@ -2751,7 +2805,9 @@ async function loadAndRenderProducts(domain, tabId) {
     const items = cleanProducts(rawJson);
     renderProductList(items);
   } catch (error) {
-    console.error('[ShopRadar] 商品数据加载失败:', error);
+    if (!isBenignRuntimeError(error)) {
+      console.warn('[ShopRadar] 商品数据加载失败:', error);
+    }
     rawProductsForExport = [];
     renderProductList([]);
   } finally {
@@ -3050,3 +3106,7 @@ document.addEventListener('visibilitychange', () => {
   refreshProStatusFromServer({ skipResume: true }).catch(() => {});
   schedulePanelRefresh({ softRefresh: true });
 });
+
+if (typeof ShopRadarGuard !== 'undefined') {
+  ShopRadarGuard.installWindowGuards();
+}

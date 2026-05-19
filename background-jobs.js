@@ -24,15 +24,27 @@ var ShopRadarBackgroundJobs = (function () {
   }
 
   function isRestrictedUrl(url) {
+    if (typeof ShopRadarGuard !== 'undefined' && ShopRadarGuard.isRestrictedUrl) {
+      return ShopRadarGuard.isRestrictedUrl(url);
+    }
     if (!url) {
       return true;
     }
+    var u = String(url).trim().toLowerCase();
     return (
-      url.indexOf('chrome://') === 0 ||
-      url.indexOf('chrome-extension://') === 0 ||
-      url.indexOf('edge://') === 0 ||
-      url.indexOf('about:') === 0
+      u.indexOf('chrome://') === 0 ||
+      u.indexOf('chrome-error://') === 0 ||
+      u.indexOf('chrome-extension://') === 0 ||
+      u.indexOf('edge://') === 0 ||
+      u.indexOf('about:') === 0
     );
+  }
+
+  function isBenignInjectError(err) {
+    if (typeof ShopRadarGuard !== 'undefined' && ShopRadarGuard.isBenignInjectError) {
+      return ShopRadarGuard.isBenignInjectError(err);
+    }
+    return false;
   }
 
   function readActiveCurrencyFromPage() {
@@ -48,13 +60,30 @@ var ShopRadarBackgroundJobs = (function () {
   }
 
   async function executeInMainWorld(tabId, func, args) {
-    var results = await chrome.scripting.executeScript({
-      target: { tabId: tabId },
-      world: 'MAIN',
-      func: func,
-      args: args || [],
-    });
-    return results[0] && results[0].result;
+    var tab;
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch (tabErr) {
+      return undefined;
+    }
+    if (!tab || !tab.url || isRestrictedUrl(tab.url)) {
+      return undefined;
+    }
+
+    try {
+      var results = await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',
+        func: func,
+        args: args || [],
+      });
+      return results[0] && results[0].result;
+    } catch (scriptErr) {
+      if (isBenignInjectError(scriptErr)) {
+        return undefined;
+      }
+      throw scriptErr;
+    }
   }
 
   function getProductsJsonHostCandidates(domain) {
@@ -319,13 +348,18 @@ var ShopRadarBackgroundJobs = (function () {
       }
 
       lastRefreshAtByDomain[domain] = Date.now();
-      console.log(
-        '[ShopRadar] 后台已更新缓存:',
-        domain,
-        '(' + rawList.length + ' 件商品,',
-        isSfcc ? 'SFCC' : 'Shopify',
-        ')'
-      );
+      if (
+        typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
+        SHOPRADAR_EXTENSION_CONFIG.debug
+      ) {
+        console.log(
+          '[ShopRadar] 后台已更新缓存:',
+          domain,
+          '(' + rawList.length + ' 件商品,',
+          isSfcc ? 'SFCC' : 'Shopify',
+          ')'
+        );
+      }
     } catch (error) {
       console.warn('[ShopRadar] 后台刷新失败:', domain, error);
     } finally {

@@ -10,9 +10,7 @@ function setupSidePanel() {
   if (chrome.sidePanel.setPanelBehavior) {
     chrome.sidePanel
       .setPanelBehavior({ openPanelOnActionClick: true })
-      .catch(function (err) {
-        console.error('[ShopRadar] setPanelBehavior 失败:', err);
-      });
+      .catch(function () {});
   }
   if (chrome.sidePanel.setOptions) {
     chrome.sidePanel
@@ -20,9 +18,7 @@ function setupSidePanel() {
         path: SIDE_PANEL_PATH,
         enabled: true,
       })
-      .catch(function (err) {
-        console.error('[ShopRadar] setOptions 失败:', err);
-      });
+      .catch(function () {});
   }
 }
 
@@ -51,13 +47,9 @@ function ensureBackgroundJobsInstalled() {
   return false;
 }
 
-self.addEventListener('error', function (event) {
-  console.error('[ShopRadar] Service Worker 错误:', event.error || event.message);
-});
-
-self.addEventListener('unhandledrejection', function (event) {
-  console.error('[ShopRadar] Service Worker 未捕获 Promise:', event.reason);
-});
+if (typeof ShopRadarGuard !== 'undefined') {
+  ShopRadarGuard.installServiceWorkerGuards();
+}
 
 chrome.runtime.onInstalled.addListener(function (details) {
   setupSidePanel();
@@ -70,11 +62,16 @@ chrome.runtime.onInstalled.addListener(function (details) {
     ShopRadarBackgroundJobs.onExtensionUpdated(details);
   }
 
-  console.log(
-    '[ShopRadar] Service Worker 就绪，版本:',
-    chrome.runtime.getManifest().version,
-    details.reason
-  );
+  if (
+    typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
+    SHOPRADAR_EXTENSION_CONFIG.debug
+  ) {
+    console.log(
+      '[ShopRadar] Service Worker 就绪，版本:',
+      chrome.runtime.getManifest().version,
+      details.reason
+    );
+  }
 });
 
 chrome.runtime.onStartup.addListener(function () {

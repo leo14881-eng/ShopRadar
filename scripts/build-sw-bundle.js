@@ -7,6 +7,8 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const PARTS = [
+  'extension-config.js',
+  'extension-guard.js',
   'shop-processor.js',
   'shop-url.js',
   'detection-cache.js',

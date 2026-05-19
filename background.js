@@ -1,5 +1,107 @@
 /* ShopRadar background.js — 自动生成，请勿手改。修改源文件后运行: npm run build:sw */
 
+/* ----- extension-config.js ----- */
+/**
+ * ShopRadar 扩展发布配置（打包进 Chrome 商店）
+ * 本地调试可复制 extension-config.dev.example.js 为 extension-config.local.js 并改 popup.html 引入
+ */
+var SHOPRADAR_EXTENSION_CONFIG = {
+  apiBase: 'https://api.shopradar.uk',
+  debug: false,
+};
+
+/* ----- extension-guard.js ----- */
+/**
+ * ShopRadar — 扩展运行时容错（popup / Service Worker 共用）
+ */
+var ShopRadarGuard = (function () {
+  'use strict';
+
+  function isRestrictedUrl(url) {
+    if (!url) {
+      return true;
+    }
+    var u = String(url).trim().toLowerCase();
+    return (
+      u.indexOf('chrome://') === 0 ||
+      u.indexOf('chrome-error://') === 0 ||
+      u.indexOf('chrome-extension://') === 0 ||
+      u.indexOf('edge://') === 0 ||
+      u.indexOf('edge-error://') === 0 ||
+      u.indexOf('about:') === 0 ||
+      u.indexOf('devtools://') === 0
+    );
+  }
+
+  function isBenignInjectError(err) {
+    var msg = String(err && err.message ? err.message : err);
+    return (
+      msg.indexOf('showing error page') !== -1 ||
+      msg.indexOf('Cannot access a chrome://') !== -1 ||
+      msg.indexOf('Cannot access contents of') !== -1 ||
+      msg.indexOf('The tab was closed') !== -1 ||
+      msg.indexOf('No tab with id') !== -1 ||
+      msg.indexOf('Could not establish connection') !== -1
+    );
+  }
+
+  function isBenignRuntimeError(err) {
+    if (isBenignInjectError(err)) {
+      return true;
+    }
+    var msg = String(err && err.message ? err.message : err);
+    return (
+      msg.indexOf('Extension context invalidated') !== -1 ||
+      msg.indexOf('Failed to fetch') !== -1 ||
+      msg.indexOf('NetworkError') !== -1 ||
+      msg.indexOf('Load failed') !== -1 ||
+      msg.indexOf('AbortError') !== -1 ||
+      msg.indexOf('HTTP 4') !== -1 ||
+      msg.indexOf('HTTP 5') !== -1
+    );
+  }
+
+  function installServiceWorkerGuards() {
+    if (typeof self === 'undefined' || !self.addEventListener) {
+      return;
+    }
+    self.addEventListener('unhandledrejection', function (event) {
+      if (isBenignRuntimeError(event.reason)) {
+        event.preventDefault();
+      }
+    });
+    self.addEventListener('error', function (event) {
+      if (isBenignRuntimeError(event.error || event.message)) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  function installWindowGuards() {
+    if (typeof window === 'undefined' || !window.addEventListener) {
+      return;
+    }
+    window.addEventListener('unhandledrejection', function (event) {
+      if (isBenignRuntimeError(event.reason)) {
+        event.preventDefault();
+      }
+    });
+    window.addEventListener('error', function (event) {
+      if (isBenignRuntimeError(event.error || event.message)) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  return {
+    isRestrictedUrl: isRestrictedUrl,
+    isBenignInjectError: isBenignInjectError,
+    isBenignRuntimeError: isBenignRuntimeError,
+    installServiceWorkerGuards: installServiceWorkerGuards,
+    installWindowGuards: installWindowGuards,
+  };
+})();
+
 /* ----- shop-processor.js ----- */
 /**
  * ShopRadar — 商品数据清洗（popup / background 共用，无 DOM 依赖）
@@ -556,15 +658,27 @@ var ShopRadarBackgroundJobs = (function () {
   }
 
   function isRestrictedUrl(url) {
+    if (typeof ShopRadarGuard !== 'undefined' && ShopRadarGuard.isRestrictedUrl) {
+      return ShopRadarGuard.isRestrictedUrl(url);
+    }
     if (!url) {
       return true;
     }
+    var u = String(url).trim().toLowerCase();
     return (
-      url.indexOf('chrome://') === 0 ||
-      url.indexOf('chrome-extension://') === 0 ||
-      url.indexOf('edge://') === 0 ||
-      url.indexOf('about:') === 0
+      u.indexOf('chrome://') === 0 ||
+      u.indexOf('chrome-error://') === 0 ||
+      u.indexOf('chrome-extension://') === 0 ||
+      u.indexOf('edge://') === 0 ||
+      u.indexOf('about:') === 0
     );
+  }
+
+  function isBenignInjectError(err) {
+    if (typeof ShopRadarGuard !== 'undefined' && ShopRadarGuard.isBenignInjectError) {
+      return ShopRadarGuard.isBenignInjectError(err);
+    }
+    return false;
   }
 
   function readActiveCurrencyFromPage() {
@@ -580,13 +694,30 @@ var ShopRadarBackgroundJobs = (function () {
   }
 
   async function executeInMainWorld(tabId, func, args) {
-    var results = await chrome.scripting.executeScript({
-      target: { tabId: tabId },
-      world: 'MAIN',
-      func: func,
-      args: args || [],
-    });
-    return results[0] && results[0].result;
+    var tab;
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch (tabErr) {
+      return undefined;
+    }
+    if (!tab || !tab.url || isRestrictedUrl(tab.url)) {
+      return undefined;
+    }
+
+    try {
+      var results = await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',
+        func: func,
+        args: args || [],
+      });
+      return results[0] && results[0].result;
+    } catch (scriptErr) {
+      if (isBenignInjectError(scriptErr)) {
+        return undefined;
+      }
+      throw scriptErr;
+    }
   }
 
   function getProductsJsonHostCandidates(domain) {
@@ -851,13 +982,18 @@ var ShopRadarBackgroundJobs = (function () {
       }
 
       lastRefreshAtByDomain[domain] = Date.now();
-      console.log(
-        '[ShopRadar] 后台已更新缓存:',
-        domain,
-        '(' + rawList.length + ' 件商品,',
-        isSfcc ? 'SFCC' : 'Shopify',
-        ')'
-      );
+      if (
+        typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
+        SHOPRADAR_EXTENSION_CONFIG.debug
+      ) {
+        console.log(
+          '[ShopRadar] 后台已更新缓存:',
+          domain,
+          '(' + rawList.length + ' 件商品,',
+          isSfcc ? 'SFCC' : 'Shopify',
+          ')'
+        );
+      }
     } catch (error) {
       console.warn('[ShopRadar] 后台刷新失败:', domain, error);
     } finally {
@@ -946,9 +1082,7 @@ function setupSidePanel() {
   if (chrome.sidePanel.setPanelBehavior) {
     chrome.sidePanel
       .setPanelBehavior({ openPanelOnActionClick: true })
-      .catch(function (err) {
-        console.error('[ShopRadar] setPanelBehavior 失败:', err);
-      });
+      .catch(function () {});
   }
   if (chrome.sidePanel.setOptions) {
     chrome.sidePanel
@@ -956,9 +1090,7 @@ function setupSidePanel() {
         path: SIDE_PANEL_PATH,
         enabled: true,
       })
-      .catch(function (err) {
-        console.error('[ShopRadar] setOptions 失败:', err);
-      });
+      .catch(function () {});
   }
 }
 
@@ -987,13 +1119,9 @@ function ensureBackgroundJobsInstalled() {
   return false;
 }
 
-self.addEventListener('error', function (event) {
-  console.error('[ShopRadar] Service Worker 错误:', event.error || event.message);
-});
-
-self.addEventListener('unhandledrejection', function (event) {
-  console.error('[ShopRadar] Service Worker 未捕获 Promise:', event.reason);
-});
+if (typeof ShopRadarGuard !== 'undefined') {
+  ShopRadarGuard.installServiceWorkerGuards();
+}
 
 chrome.runtime.onInstalled.addListener(function (details) {
   setupSidePanel();
@@ -1006,11 +1134,16 @@ chrome.runtime.onInstalled.addListener(function (details) {
     ShopRadarBackgroundJobs.onExtensionUpdated(details);
   }
 
-  console.log(
-    '[ShopRadar] Service Worker 就绪，版本:',
-    chrome.runtime.getManifest().version,
-    details.reason
-  );
+  if (
+    typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
+    SHOPRADAR_EXTENSION_CONFIG.debug
+  ) {
+    console.log(
+      '[ShopRadar] Service Worker 就绪，版本:',
+      chrome.runtime.getManifest().version,
+      details.reason
+    );
+  }
 });
 
 chrome.runtime.onStartup.addListener(function () {

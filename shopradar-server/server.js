@@ -181,6 +181,13 @@ function isProRow(row) {
   return Boolean(row && Number(row.is_pro) === 1);
 }
 
+function normalizeDomainKey(domain) {
+  return String(domain || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./, '');
+}
+
 function computeFreeRemaining(row, today) {
   if (!row || row.last_query_date !== today) {
     return FREE_DAILY_LIMIT;
@@ -541,18 +548,28 @@ function startServer(db) {
     const clientIp = getClientIp(req);
 
     const accessToken = extractAccessTokenFromRequest(req);
-    const tokenVerified =
-      accessToken &&
-      verifyAccessToken(accessToken, deviceId).valid;
+    const tokenCheck = accessToken
+      ? verifyAccessToken(accessToken, deviceId)
+      : { valid: false };
+    const tokenDomain =
+      tokenCheck.valid && tokenCheck.payload
+        ? normalizeDomainKey(tokenCheck.payload.domain)
+        : '';
+    const requestDomain = normalizeDomainKey(domain);
+    const tokenSessionReuse =
+      tokenCheck.valid &&
+      tokenDomain &&
+      requestDomain &&
+      tokenDomain === requestDomain;
 
     enqueueDbWrite(function () {
-      if (tokenVerified) {
+      if (tokenSessionReuse) {
         return handleCheckLimitFromSession(db, req, deviceId, domain);
       }
       return handleCheckLimit(db, req, deviceId, domain);
     })
       .then(function (result) {
-        attachAccessTokenToResult(result, deviceId);
+        attachAccessTokenToResult(result, deviceId, domain);
         if (result.isPro) {
           console.log(
             '[ShopRadar Server] ✓ Pro 会员放行 | deviceId=' + deviceId
@@ -632,7 +649,8 @@ function startServer(db) {
         if (isPro) {
           const enriched = attachAccessTokenToResult(
             { allowed: true, isPro: true },
-            deviceId
+            deviceId,
+            ''
           );
           payload.accessToken = enriched.accessToken;
           payload.tokenExpiresIn = enriched.tokenExpiresIn;
@@ -689,7 +707,8 @@ function startServer(db) {
         }
         const enriched = attachAccessTokenToResult(
           { allowed: true, isPro: true },
-          deviceId
+          deviceId,
+          ''
         );
         res.json({
           exportAllowed: true,

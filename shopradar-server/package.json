@@ -11,6 +11,7 @@
     "ngrok": "scripts\\ngrok.cmd",
     "ngrok:setup": "scripts\\ngrok-setup.cmd",
     "reset-pro": "node scripts/reset-pro.js",
+    "reset-quota": "node scripts/reset-quota.js",
     "grant-pro": "node scripts/grant-pro.js",
     "setup-secrets": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-local-secrets.ps1",
     "rotate-lemon-secret": "node scripts/rotate-lemon-webhook-secret.js",

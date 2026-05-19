@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const TOKEN_VERSION = 1;
+const TOKEN_VERSION = 2;
 const TOKEN_TTL_MS = Number(process.env.SHOPRADAR_TOKEN_TTL_MS) || 20 * 60 * 1000;
 const SECRET_FILE = path.join(__dirname, '.token-secret');
 
@@ -60,7 +60,7 @@ function getTokenSecret() {
 }
 
 /**
- * @param {{ deviceId: string, isPro?: boolean, ttlMs?: number }} opts
+ * @param {{ deviceId: string, isPro?: boolean, domain?: string, ttlMs?: number }} opts
  * @returns {{ token: string, expiresAt: number, expiresIn: number }}
  */
 function signAccessToken(opts) {
@@ -71,10 +71,12 @@ function signAccessToken(opts) {
 
   const ttlMs = opts.ttlMs != null ? Number(opts.ttlMs) : TOKEN_TTL_MS;
   const expiresAt = Date.now() + ttlMs;
+  const domain = opts.domain ? String(opts.domain).trim().toLowerCase() : '';
   const payload = {
     v: TOKEN_VERSION,
     deviceId: deviceId,
     isPro: Boolean(opts.isPro),
+    domain: domain,
     exp: expiresAt,
   };
 
@@ -178,7 +180,7 @@ function extractAccessTokenFromRequest(req) {
  * @param {string} deviceId
  * @returns {object}
  */
-function attachAccessTokenToResult(result, deviceId) {
+function attachAccessTokenToResult(result, deviceId, domain) {
   if (!result || (!result.allowed && !result.isPro)) {
     return result;
   }
@@ -187,6 +189,7 @@ function attachAccessTokenToResult(result, deviceId) {
     const signed = signAccessToken({
       deviceId: deviceId,
       isPro: Boolean(result.isPro),
+      domain: domain || (result.domain ? String(result.domain) : ''),
     });
     result.accessToken = signed.token;
     result.tokenExpiresAt = signed.expiresAt;
