@@ -8,6 +8,11 @@ node_modules/
 *.iml
 
 # Local / secrets
+.env
+.env.local
+shopradar-server/.env
+!/.env.example
+!shopradar-server/.env.example
 shopradar-server/database.sqlite
 shopradar-server/database.sqlite-*
 shopradar-server/*.db

@@ -33,7 +33,8 @@ function getTokenSecret() {
     return cachedSecret;
   }
 
-  const fromEnv = process.env.SHOPRADAR_TOKEN_SECRET;
+  const fromEnv =
+    process.env.SHOPRADAR_TOKEN_SECRET || process.env.JWT_SECRET;
   if (fromEnv && String(fromEnv).trim()) {
     cachedSecret = String(fromEnv).trim();
     return cachedSecret;
