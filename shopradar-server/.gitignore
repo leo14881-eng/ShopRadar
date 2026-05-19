@@ -1,0 +1,7 @@
+node_modules/
+database.sqlite
+*.db-journal
+whitelist.json
+bin/cloudflared.exe
+tunnel-url.txt
+ngrok-url.txt

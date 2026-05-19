@@ -1,0 +1,15 @@
+{
+  "name": "shopradar-extension",
+  "private": true,
+  "description": "ShopRadar Chrome extension",
+  "scripts": {
+    "start": "npm run start --prefix shopradar-server",
+    "server": "npm run start --prefix shopradar-server",
+    "ngrok": "npm run ngrok --prefix shopradar-server",
+    "tunnel": "npm run tunnel --prefix shopradar-server",
+    "build:sw": "node scripts/build-sw-bundle.js",
+    "verify": "node scripts/verify-extension-folder.js",
+    "check": "node scripts/build-sw-bundle.js && node scripts/validate-extension.js && node scripts/verify-extension-folder.js",
+    "check:extension": "node scripts/build-sw-bundle.js && node scripts/validate-extension.js"
+  }
+}

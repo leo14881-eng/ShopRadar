@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "ShopRadar",
+  "version": "1.7.0",
+  "description": "轻量级 Shopify 跨境电商独立站环境检测工具",
+  "permissions": ["activeTab", "storage", "scripting", "tabs", "sidePanel"],
+  "host_permissions": ["<all_urls>", "http://localhost:3000/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "打开 ShopRadar 侧边栏"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  }
+}

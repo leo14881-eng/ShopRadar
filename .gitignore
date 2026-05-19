@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Local / secrets
+shopradar-server/database.sqlite
+shopradar-server/database.sqlite-*
+shopradar-server/*.db
+shopradar-server/*.sqlite
+shopradar-server/whitelist.json
+shopradar-server/bin/cloudflared.exe
+shopradar-server/tunnel-url.txt
+shopradar-server/ngrok-url.txt
+lemon-checkout.config.js
+
+# Restore / debug artifacts
+_patch*
+_*
+scripts/restore-failed-patches.log
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+# Optional ngrok config (local dev). Default: npm run ngrok uses CLI flags only.
+version: "3"
+agent:
+  web_addr: 127.0.0.1:4040
+
+tunnels:
+  shopradar:
+    proto: http
+    addr: 3000

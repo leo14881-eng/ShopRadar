@@ -1,0 +1,38 @@
+---
+description: ShopRadar Chrome MV3 扩展开发约束（防止 Service Worker 失效）
+globs:
+  - background.js
+  - manifest.json
+  - sfcc-fetch.js
+  - popup.js
+  - popup.html
+  - scripts/**
+alwaysApply: false
+---
+
+# ShopRadar 扩展更新规范
+
+## Service Worker（background.js + background-jobs.js）
+
+- `background.js` 由 `npm run build:sw` 生成（单文件 SW，**禁止 importScripts**）
+- 改 `shop-processor.js` / `background-jobs.js` / `background.sw-bootstrap.js` 后须 `npm run build:sw`
+- **禁止** 在 background 中 `importScripts('sfcc-fetch.js')` 或引入 `popup.js`（含 DOM / 页面逻辑，会导致 SW 显示「无效」）
+- 页面侧逻辑（SFCC 抓取、Shopify 检测注入）使用：
+  - `executeScript({ files: ['sfcc-fetch.js'], func: ... })` 在页面内抓取 SFCC
+  - 侧边栏仅用 `setPanelBehavior({ openPanelOnActionClick: true })`；禁止 `onClicked` + `sidePanel.open` 混用
+  - 禁止在全局作用域执行 bootstrap / storage / sidePanel.open；禁止 popup sendMessage 打开侧边栏
+- 新增 background 依赖时：先评估体积，更新 `scripts/validate-extension.js` 白名单并说明原因
+
+## 发版前必做
+
+```bash
+npm run check
+```
+
+（`npm run` / `node scripts/*` 已在 Cursor `~/.cursor/permissions.json` 终端白名单，Agent 可直接执行无需人工点 Run。）
+
+然后在 `chrome://extensions` 确认 **Service Worker** 不是「无效」，并点开一次侧边栏冒烟测试。
+
+## 版本号
+
+每次发布递增 `manifest.json` 的 `version`（x.y.z）。

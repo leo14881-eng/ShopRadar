@@ -1,0 +1,21 @@
+{
+  "name": "shopradar-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ShopRadar 免费次数鉴权服务",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "tunnel": "scripts\\tunnel.cmd",
+    "tunnel:ps1": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/tunnel.ps1",
+    "ngrok": "scripts\\ngrok.cmd",
+    "ngrok:setup": "scripts\\ngrok-setup.cmd",
+    "reset-pro": "node scripts/reset-pro.js",
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-dev.ps1"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "sqlite3": "^5.1.7"
+  }
+}
