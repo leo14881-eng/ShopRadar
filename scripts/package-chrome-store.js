@@ -23,6 +23,7 @@ const INCLUDE_FILES = [
   'detection-cache.js',
   'store-detect.js',
   'sfcc-fetch.js',
+  'lemon-payment-return.js',
   'lemon-checkout.config.js',
 ];
 

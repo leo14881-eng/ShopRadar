@@ -13,6 +13,7 @@ const PARTS = [
   'shop-url.js',
   'detection-cache.js',
   'store-detect.js',
+  'lemon-payment-return.js',
   'background-jobs.js',
 ];
 const BOOTSTRAP_FILE = 'background.sw-bootstrap.js';

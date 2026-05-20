@@ -27,7 +27,7 @@ ShopRadar ("we", "the extension") helps users detect Shopify stores and view pro
 
 ## Contact
 
-Email: support@shopradar.uk
+Email: qinx468@gmail.com
 
 ## Changes
 

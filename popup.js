@@ -56,10 +56,10 @@ const UI_TEXT = {
   authServerOffline:
     '无法连接鉴权服务。请先在终端执行：cd shopradar-server → npm start，然后刷新本侧边栏。',
   proReadySwitchShop:
-    'Pro 已开通！请切换到 Shopify / SFCC 店铺标签页即可加载商品列表。',
-  paymentConfirming: '正在确认支付结果…',
+    'Pro 已开通！正在返回付款前的店铺页面…',
+  paymentConfirming: '正在确认支付结果，成功后自动返回店铺页…',
   paymentPendingSwitchShop:
-    '支付页无法检测店铺。若已付款成功，请切回店铺标签页；或稍等 Webhook 回调。',
+    '正在等待支付确认。成功后 extension 会自动关闭本页并返回店铺标签页。',
 };
 
 /** 导出 CSV 列（精选字段，便于 Excel 查看） */
@@ -1216,7 +1216,27 @@ function bindUnlockProButton() {
       return;
     }
 
-    chrome.tabs.create({ url: checkoutUrl });
+    var returnTab = await getActiveBrowserTab();
+    if (
+      returnTab &&
+      returnTab.id != null &&
+      returnTab.url &&
+      !isRestrictedUrl(returnTab.url) &&
+      !isLemonSqueezyHost(extractDomain(returnTab.url)) &&
+      typeof ShopRadarLemonReturn !== 'undefined'
+    ) {
+      await ShopRadarLemonReturn.saveReturnContext(returnTab.id, returnTab.url);
+    }
+
+    chrome.tabs.create({ url: checkoutUrl }, function (newTab) {
+      if (
+        newTab &&
+        newTab.id != null &&
+        typeof ShopRadarLemonReturn !== 'undefined'
+      ) {
+        ShopRadarLemonReturn.setCheckoutTabId(newTab.id);
+      }
+    });
   });
 }
 
@@ -1547,9 +1567,13 @@ async function pollProActivationAfterPayment(runId, maxWaitMs) {
 
     const ok = await refreshProStatusFromServer({ skipResume: true });
     if (ok || isProSubscriber) {
+      if (typeof ShopRadarLemonReturn !== 'undefined') {
+        await ShopRadarLemonReturn.returnToShopAfterPayment();
+      }
       if (loadingTextEl) {
         loadingTextEl.textContent = prevLoadingText || UI_TEXT.loading;
       }
+      schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
       return true;
     }
 
@@ -3096,6 +3120,17 @@ document.addEventListener('DOMContentLoaded', () => {
   bindDeviceIdBar();
   bindShopCacheListener();
   bindSidePanelTabListeners();
+
+  chrome.runtime.onMessage.addListener(function (message) {
+    if (!message || message.type !== 'SR_PRO_ACTIVATED') {
+      return;
+    }
+    isProSubscriber = true;
+    persistProFlag(true).catch(function () {});
+    hideLimitOverlay();
+    schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
+  });
+
   initChain = initChain.then(() => runInitWithWatchdog({}));
 });
 

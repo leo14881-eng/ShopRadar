@@ -426,6 +426,13 @@ var ShopRadarBackgroundJobs = (function () {
     });
 
     chrome.tabs.onActivated.addListener(onTabActivated);
+
+    if (
+      typeof ShopRadarLemonReturn !== 'undefined' &&
+      ShopRadarLemonReturn.installBackgroundListener
+    ) {
+      ShopRadarLemonReturn.installBackgroundListener();
+    }
   }
 
   return {
