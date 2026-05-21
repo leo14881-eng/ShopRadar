@@ -1,14 +1,18 @@
-# ShopRadar
+# ShopRadar Monorepo
 
-Chrome 侧边栏扩展：检测 Shopify / SFCC 店铺、抓取商品列表、每日免费额度与 Pro（Lemon Squeezy）订阅。
+| 目录 | 说明 |
+|------|------|
+| [`shopradar-extension/`](shopradar-extension/) | Chrome 侧边栏扩展（Shopify / SFCC 店铺洞察） |
+| [`shopradar-website/`](shopradar-website/) | 官网与爆品大盘 |
+| [`shopradar-server/`](shopradar-server/) | 后端 API（鉴权、趋势榜、Lemon Webhook） |
 
-## 加载扩展
+## 加载 Chrome 扩展
 
 1. 打开 `chrome://extensions`，开启「开发者模式」
-2. 「加载已解压的扩展程序」→ 选择本仓库根目录（含 `manifest.json` 的文件夹）
-3. 运行 `npm run build:sw` 后若修改了 `background-*.js`，需重新加载扩展
+2. 「加载已解压的扩展程序」→ 选择 **`shopradar-extension/`** 文件夹（含 `manifest.json`）
+3. 修改后台源文件后运行 `npm run build:sw`，再在扩展页点击重新加载
 
-## 本地鉴权服务
+## 本地后端
 
 ```bash
 cd shopradar-server
@@ -16,37 +20,29 @@ npm install
 npm start
 ```
 
-默认 `http://localhost:3000`。扩展内鉴权 API 指向该地址（上线前需改 `popup.js` 中的 `AUTH_API_*`）。
+默认 `http://localhost:3000`。生产 API：`https://api.shopradar.uk`（见 `shopradar-extension/extension-config.js`）。
 
-**本地密钥（方案 B，推荐）** — 均在 `shopradar-server/` 下，已 gitignore：
+**本地密钥** — 在 `shopradar-server/` 下（已 gitignore）：
 
 ```bash
 cd shopradar-server
-npm run setup-secrets   # 生成 .token-secret、.lemon-webhook-* 模板
+npm run setup-secrets
 npm start
 ```
 
-| 文件 | 作用 |
-|------|------|
-| `.token-secret` | 访问令牌签名密钥（脚本可自动生成） |
-| `.lemon-webhook-secret` | Lemon Signing secret（**6–40 字符**；`npm run rotate-lemon-secret` 生成） |
-| `.lemon-webhook-verify` | `0` 关闭验签（默认），`1` 开启 |
-
-也可用环境变量覆盖（见 `*.example` 说明）。
-
-## 配置
-
-- 复制 `lemon-checkout.config.example.js` 为 `lemon-checkout.config.js`，填入 Lemon Checkout 链接
-- 白名单：复制 `shopradar-server/whitelist.example.json` 为 `whitelist.json`
-
-## 脚本
+## 常用命令（仓库根目录）
 
 | 命令 | 说明 |
 |------|------|
-| `npm run build:sw` | 合并生成 `background.js` |
+| `npm run build:sw` | 合并生成 `shopradar-extension/background.js` |
 | `npm run check` | 构建并校验扩展 |
+| `npm run package:store` | 打包 Chrome Web Store zip |
 | `npm start` | 启动 `shopradar-server` |
-| `npm run tunnel` | Cloudflare 隧道（本地 Webhook 联调） |
+| `npm run tunnel` | Cloudflare 隧道（Webhook 联调） |
+
+扩展配置：复制 `shopradar-extension/lemon-checkout.config.example.js` 为 `lemon-checkout.config.js`。
+
+Chrome 商店发布说明见 [`shopradar-extension/CHROME_WEB_STORE.md`](shopradar-extension/CHROME_WEB_STORE.md)。
 
 ## 仓库
 

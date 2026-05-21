@@ -20,26 +20,37 @@ const {
   attachAccessTokenToResult,
 } = require('./access-token');
 const {
+  migrateTrendingTables,
+  ingestProducts,
+  queryTrending,
+  MAX_INGEST_PRODUCTS,
+} = require('./trending');
+const {
   isLemonWebhookSecretConfigured,
   isLemonWebhookVerifyEnabled,
   assertLemonWebhookVerified,
 } = require('./lemon-webhook');
+const { handleLemonWebhookEvent, activateProForUser } = require('./lemon-webhook-handler');
+const {
+  migratePendingProClaimsTable,
+  savePendingProClaim,
+  claimProByEmail,
+} = require('./pro-claim');
+const { mountV1Routes, V1_WEBHOOK_PATH } = require('./routes-v1');
+const { connectRedis, closeRedis, pingRedis } = require('./redis-client');
 
 const LEMON_WEBHOOK_PATH = '/api/webhook/lemon-squeezy';
+const LEMON_WEBHOOK_PATHS = new Set([LEMON_WEBHOOK_PATH, V1_WEBHOOK_PATH]);
 
 const PORT = Number(process.env.PORT) || 3000;
 const FREE_DAILY_LIMIT = 3;
 const DB_PATH = path.join(__dirname, 'database.sqlite');
 const WHITELIST_PATH = path.join(__dirname, 'whitelist.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
-
-/** Lemon Squeezy 会回调的成功类事件 */
-const LEMON_PRO_EVENTS = new Set([
-  'order_created',
-  'subscription_created',
-  'subscription_payment_success',
-  'subscription_payment_recovered',
-]);
+const WEBSITE_URL = String(process.env.SHOPRADAR_WEBSITE_URL || 'https://shopradar.uk').replace(
+  /\/$/,
+  ''
+);
 
 /** 额度用尽时的标准提示文案 */
 const LIMIT_EXCEEDED_MSG =
@@ -53,7 +64,7 @@ app.use(
     limit: '512kb',
     verify: function (req, _res, buf) {
       const pathOnly = String(req.originalUrl || req.url || '').split('?')[0];
-      if (pathOnly === LEMON_WEBHOOK_PATH) {
+      if (LEMON_WEBHOOK_PATHS.has(pathOnly)) {
         req.rawBody = buf;
       }
     },
@@ -179,7 +190,55 @@ function dbRun(db, sql, params) {
 }
 
 function isProRow(row) {
-  return Boolean(row && Number(row.is_pro) === 1);
+  if (!row || Number(row.is_pro) !== 1) {
+    return false;
+  }
+  if (row.pro_expires_at) {
+    const expiresMs = new Date(row.pro_expires_at).getTime();
+    if (expiresMs && Date.now() > expiresMs) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function ensureUsersColumn(db, columnName, ddl) {
+  return new Promise(function (resolve, reject) {
+    db.all('PRAGMA table_info(users)', function (pragmaErr, columns) {
+      if (pragmaErr) {
+        reject(pragmaErr);
+        return;
+      }
+      const exists = (columns || []).some(function (col) {
+        return col && col.name === columnName;
+      });
+      if (exists) {
+        resolve(false);
+        return;
+      }
+      db.run(ddl, function (alterErr) {
+        if (alterErr) {
+          reject(alterErr);
+          return;
+        }
+        console.log('[ShopRadar Server] 已迁移 users.' + columnName);
+        resolve(true);
+      });
+    });
+  });
+}
+
+async function migrateUsersTable(db) {
+  await ensureUsersColumn(
+    db,
+    'pro_expires_at',
+    'ALTER TABLE users ADD COLUMN pro_expires_at TEXT'
+  );
+  await ensureUsersColumn(
+    db,
+    'account_email',
+    'ALTER TABLE users ADD COLUMN account_email TEXT'
+  );
 }
 
 function normalizeDomainKey(domain) {
@@ -250,75 +309,15 @@ async function handleCheckLimitFromSession(db, req, deviceId, domain) {
 }
 
 /**
- * 从 Lemon Squeezy Webhook JSON 中提取 device_id（checkout custom / passthrough）
- * @param {object} body
- * @returns {string}
+ * 处理 Lemon Squeezy Webhook（legacy 路径，兼容旧配置）
  */
-function extractDeviceIdFromLemonWebhook(body) {
-  if (!body || typeof body !== 'object') {
-    return '';
-  }
-
-  var candidates = [];
-
-  if (body.meta && body.meta.custom_data != null) {
-    candidates.push(body.meta.custom_data);
-  }
-
-  if (body.data && body.data.attributes) {
-    var attrs = body.data.attributes;
-    if (attrs.custom_data != null) {
-      candidates.push(attrs.custom_data);
-    }
-    if (attrs.first_order_item && attrs.first_order_item.custom_data != null) {
-      candidates.push(attrs.first_order_item.custom_data);
-    }
-  }
-
-  if (body.passthrough != null) {
-    candidates.push(body.passthrough);
-  }
-
-  if (body.custom_data != null) {
-    candidates.push(body.custom_data);
-  }
-
-  for (var i = 0; i < candidates.length; i++) {
-    var raw = candidates[i];
-    var parsed = raw;
-
-    if (typeof raw === 'string') {
-      try {
-        parsed = JSON.parse(raw);
-      } catch (parseErr) {
-        if (raw.trim()) {
-          return raw.trim();
-        }
-        continue;
-      }
-    }
-
-    if (parsed && typeof parsed === 'object') {
-      var id =
-        parsed.device_id ||
-        parsed.deviceId ||
-        parsed.deviceID ||
-        parsed.sr_device_id ||
-        '';
-      if (id) {
-        return String(id).trim();
-      }
-    }
-  }
-
-  return '';
-}
-
-function getLemonEventName(body) {
-  if (!body || !body.meta) {
-    return '';
-  }
-  return String(body.meta.event_name || body.meta.event || '').trim();
+async function handleLemonSqueezyWebhook(db, body) {
+  return handleLemonWebhookEvent(db, body, {
+    dbGet: dbGet,
+    dbRun: dbRun,
+    getTodayDateString: getTodayDateString,
+    savePendingProClaim: savePendingProClaim,
+  });
 }
 
 function initDatabase() {
@@ -357,8 +356,18 @@ function initDatabase() {
             });
 
             if (hasIsPro) {
-              console.log('[ShopRadar Server] SQLite 已就绪:', DB_PATH);
-              resolve(db);
+              migrateUsersTable(db)
+                .then(function () {
+                  return migratePendingProClaimsTable(db, dbRun);
+                })
+                .then(function () {
+                  return migrateTrendingTables(db);
+                })
+                .then(function () {
+                  console.log('[ShopRadar Server] SQLite 已就绪:', DB_PATH);
+                  resolve(db);
+                })
+                .catch(reject);
               return;
             }
 
@@ -370,8 +379,18 @@ function initDatabase() {
                   return;
                 }
                 console.log('[ShopRadar Server] 已迁移 users.is_pro 字段');
-                console.log('[ShopRadar Server] SQLite 已就绪:', DB_PATH);
-                resolve(db);
+                migrateUsersTable(db)
+                  .then(function () {
+                    return migratePendingProClaimsTable(db, dbRun);
+                  })
+                  .then(function () {
+                    return migrateTrendingTables(db);
+                  })
+                  .then(function () {
+                    console.log('[ShopRadar Server] SQLite 已就绪:', DB_PATH);
+                    resolve(db);
+                  })
+                  .catch(reject);
               }
             );
           });
@@ -490,39 +509,6 @@ async function handleCheckLimit(db, req, deviceId, domain) {
   };
 }
 
-/**
- * 处理 Lemon Squeezy Webhook
- */
-async function handleLemonSqueezyWebhook(db, body) {
-  const eventName = getLemonEventName(body);
-
-  if (!LEMON_PRO_EVENTS.has(eventName)) {
-    return {
-      handled: false,
-      reason: 'ignored_event',
-      eventName: eventName,
-    };
-  }
-
-  const deviceId = extractDeviceIdFromLemonWebhook(body);
-  if (!deviceId) {
-    return {
-      handled: false,
-      reason: 'missing_device_id',
-      eventName: eventName,
-    };
-  }
-
-  await setProForDevice(db, deviceId);
-
-  return {
-    handled: true,
-    eventName: eventName,
-    deviceId: deviceId,
-    isPro: true,
-  };
-}
-
 function startServer(db) {
   let dbWriteQueue = Promise.resolve();
 
@@ -532,12 +518,26 @@ function startServer(db) {
     return run;
   }
 
-  app.get('/privacy', function (_req, res) {
-    res.sendFile(path.join(PUBLIC_DIR, 'privacy.html'));
+  app.get('/privacy', function (req, res) {
+    var lang = req.query.lang ? String(req.query.lang).trim() : '';
+    var dest = WEBSITE_URL + '/privacy.html';
+    if (lang) {
+      dest += '?lang=' + encodeURIComponent(lang);
+    }
+    res.redirect(302, dest);
+  });
+
+  app.get('/terms', function (req, res) {
+    var lang = req.query.lang ? String(req.query.lang).trim() : '';
+    var dest = WEBSITE_URL + '/terms.html';
+    if (lang) {
+      dest += '?lang=' + encodeURIComponent(lang);
+    }
+    res.redirect(302, dest);
   });
 
   app.get('/', function (_req, res) {
-    res.redirect(302, '/privacy');
+    res.redirect(302, WEBSITE_URL + '/privacy.html');
   });
 
   app.post('/api/check-limit', function (req, res) {
@@ -646,7 +646,7 @@ function startServer(db) {
 
     dbGet(
       db,
-      'SELECT is_pro FROM users WHERE device_id = ?',
+      'SELECT is_pro, pro_expires_at FROM users WHERE device_id = ?',
       [deviceId]
     )
       .then(function (row) {
@@ -670,6 +670,66 @@ function startServer(db) {
       .catch(function (error) {
         console.error('[ShopRadar Server] pro-status 失败:', error);
         res.status(500).json({ isPro: false, msg: '服务器内部错误' });
+      });
+  });
+
+  app.post('/api/claim-pro', function (req, res) {
+    const deviceId =
+      req.body && req.body.deviceId ? String(req.body.deviceId).trim() : '';
+    const email =
+      req.body && req.body.email ? String(req.body.email).trim() : '';
+
+    if (!deviceId || !email) {
+      return res.status(400).json({
+        ok: false,
+        isPro: false,
+        msg: '缺少 deviceId 或 email',
+      });
+    }
+
+    enqueueDbWrite(function () {
+      return claimProByEmail(
+        db,
+        dbGet,
+        dbRun,
+        activateProForUser,
+        deviceId,
+        email,
+        getTodayDateString()
+      );
+    })
+      .then(function (result) {
+        if (!result.ok) {
+          return res.status(404).json(
+            Object.assign({ isPro: false }, result)
+          );
+        }
+        const enriched = attachAccessTokenToResult(
+          { allowed: true, isPro: true },
+          deviceId,
+          ''
+        );
+        res.json(
+          Object.assign(
+            {
+              ok: true,
+              isPro: true,
+              deviceId: deviceId,
+              accessToken: enriched.accessToken,
+              tokenExpiresIn: enriched.tokenExpiresIn,
+              tokenExpiresAt: enriched.tokenExpiresAt,
+            },
+            result
+          )
+        );
+      })
+      .catch(function (error) {
+        console.error('[ShopRadar Server] claim-pro 失败:', error);
+        res.status(500).json({
+          ok: false,
+          isPro: false,
+          msg: '服务器内部错误',
+        });
       });
   });
 
@@ -702,7 +762,7 @@ function startServer(db) {
 
     dbGet(
       db,
-      'SELECT is_pro FROM users WHERE device_id = ?',
+      'SELECT is_pro, pro_expires_at FROM users WHERE device_id = ?',
       [deviceId]
     )
       .then(function (row) {
@@ -732,6 +792,90 @@ function startServer(db) {
       });
   });
 
+  app.post('/api/ingest/products', function (req, res) {
+    const deviceId =
+      req.body && req.body.deviceId ? String(req.body.deviceId).trim() : '';
+    const domain =
+      req.body && req.body.domain ? String(req.body.domain).trim() : '';
+    const storeType =
+      req.body && req.body.storeType
+        ? String(req.body.storeType).trim()
+        : 'shopify';
+    const currency =
+      req.body && req.body.currency
+        ? String(req.body.currency).trim()
+        : 'USD';
+    const products = req.body && Array.isArray(req.body.products)
+      ? req.body.products
+      : [];
+
+    if (!deviceId) {
+      return res.status(400).json({ ok: false, msg: '缺少 deviceId' });
+    }
+    if (!domain) {
+      return res.status(400).json({ ok: false, msg: '缺少 domain' });
+    }
+    if (!products.length) {
+      return res.status(400).json({ ok: false, msg: '缺少 products' });
+    }
+    if (products.length > MAX_INGEST_PRODUCTS) {
+      return res.status(400).json({
+        ok: false,
+        msg: '单次最多上报 ' + MAX_INGEST_PRODUCTS + ' 个商品',
+      });
+    }
+
+    enqueueDbWrite(function () {
+      return ingestProducts(db, deviceId, domain, storeType, currency, products);
+    })
+      .then(function (result) {
+        if (result && result.ok) {
+          console.log(
+            '[ShopRadar Server] ingest ✓ | deviceId=' +
+              deviceId +
+              ' | domain=' +
+              domain +
+              ' | count=' +
+              result.ingested
+          );
+          return res.json(result);
+        }
+        res.status(429).json(result || { ok: false, msg: 'ingest rejected' });
+      })
+      .catch(function (error) {
+        console.error('[ShopRadar Server] ingest 失败:', error);
+        res.status(500).json({ ok: false, msg: '服务器内部错误' });
+      });
+  });
+
+  app.get('/api/trending', function (req, res) {
+    const deviceId = req.query.deviceId
+      ? String(req.query.deviceId).trim()
+      : '';
+    const limit = req.query.limit ? Number(req.query.limit) : 20;
+
+    if (!deviceId) {
+      return res.status(400).json({ ok: false, msg: '缺少 deviceId' });
+    }
+
+    dbGet(
+      db,
+      'SELECT is_pro, pro_expires_at FROM users WHERE device_id = ?',
+      [deviceId]
+    )
+      .then(function (row) {
+        const isPro = isProRow(row);
+        return queryTrending(db, { limit: limit, isPro: isPro });
+      })
+      .then(function (payload) {
+        res.json(payload);
+      })
+      .catch(function (error) {
+        console.error('[ShopRadar Server] trending 失败:', error);
+        res.status(500).json({ ok: false, msg: '服务器内部错误' });
+      });
+  });
+
   app.post('/api/webhook/lemon-squeezy', function (req, res) {
     const verifyResult = assertLemonWebhookVerified(req);
     if (!verifyResult.ok) {
@@ -747,7 +891,6 @@ function startServer(db) {
     }
 
     const body = req.body || {};
-    const eventName = getLemonEventName(body);
 
     enqueueDbWrite(function () {
       return handleLemonSqueezyWebhook(db, body);
@@ -755,10 +898,12 @@ function startServer(db) {
       .then(function (result) {
         if (result.handled) {
           console.log(
-            '[ShopRadar Server] Lemon Webhook ✓ Pro 已开通 | event=' +
-              result.eventName +
+            '[ShopRadar Server] Lemon Webhook ✓ | event=' +
+              (result.eventName || '-') +
+              ' | action=' +
+              (result.action || '-') +
               ' | deviceId=' +
-              result.deviceId
+              (result.deviceId || '-')
           );
         } else {
           console.log(
@@ -777,7 +922,31 @@ function startServer(db) {
   });
 
   app.get('/api/health', function (_req, res) {
-    res.json({ ok: true, service: 'shopradar-server', version: '1.2.0' });
+    pingRedis()
+      .then(function () {
+        res.json({
+          ok: true,
+          service: 'shopradar-server',
+          version: '1.5.0',
+          redis: true,
+        });
+      })
+      .catch(function () {
+        res.status(503).json({
+          ok: false,
+          service: 'shopradar-server',
+          version: '1.5.0',
+          redis: false,
+          msg: 'Redis unavailable',
+        });
+      });
+  });
+
+  mountV1Routes(app, db, {
+    enqueueDbWrite: enqueueDbWrite,
+    dbGet: dbGet,
+    dbRun: dbRun,
+    getTodayDateString: getTodayDateString,
   });
 
   app.get('/api/my-ip', function (req, res) {
@@ -793,6 +962,10 @@ function startServer(db) {
     console.log('[ShopRadar Server] POST /api/webhook/lemon-squeezy');
     console.log('[ShopRadar Server] GET  /api/pro-status?deviceId=...');
     console.log('[ShopRadar Server] POST /api/verify-export');
+    console.log('[ShopRadar Server] POST /api/ingest/products');
+    console.log('[ShopRadar Server] GET  /api/trending?deviceId=...');
+    console.log('[ShopRadar Server] GET  /api/v1/dashboard/trending');
+    console.log('[ShopRadar Server] POST /api/v1/webhook/lemonsqueezy');
     console.log(
       '[ShopRadar Server] 白名单:',
       whitelistCache.ips.length,
@@ -820,16 +993,25 @@ loadWhitelist();
 
 initDatabase()
   .then(function (db) {
+    return connectRedis().then(function () {
+      return db;
+    });
+  })
+  .then(function (db) {
     startServer(db);
 
     process.on('SIGINT', function () {
-      db.close(function () {
-        process.exit(0);
-      });
+      closeRedis()
+        .catch(function () {})
+        .then(function () {
+          db.close(function () {
+            process.exit(0);
+          });
+        });
     });
   })
   .catch(function (error) {
-    console.error('[ShopRadar Server] 数据库初始化失败:', error);
+    console.error('[ShopRadar Server] 启动失败:', error.message || error);
     process.exit(1);
   });
 

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payment Successful — ShopRadar</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>body { font-family: Inter, system-ui, sans-serif; }</style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center antialiased">
+  <div class="text-center px-6 max-w-md">
+    <div class="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-violet-500/20 border border-cyan-500/30 flex items-center justify-center">
+      <svg class="w-8 h-8 text-cyan-400 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg>
+    </div>
+    <h1 class="text-2xl font-bold mb-2">Activating Pro…</h1>
+    <p id="status-text" class="text-gray-400 text-sm mb-6">Confirming your subscription with ShopRadar servers.</p>
+    <p class="text-xs text-gray-600">This usually takes a few seconds. Do not close this tab.</p>
+  </div>
+
+  <script src="website-config.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      var CFG = window.SHOPRADAR_WEBSITE_CONFIG || {};
+      var API_BASE = String(CFG.apiBase || '').replace(/\/$/, '');
+      var STORAGE_DEVICE_ID = 'sr_device_id';
+
+      function getDeviceId() {
+        try {
+          var params = new URLSearchParams(window.location.search);
+          var fromQuery = params.get('deviceId') || params.get('device_id');
+          if (fromQuery) {
+            localStorage.setItem(STORAGE_DEVICE_ID, fromQuery);
+            return fromQuery;
+          }
+          return localStorage.getItem(STORAGE_DEVICE_ID) || '';
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function delay(ms) {
+        return new Promise(function (r) { setTimeout(r, ms); });
+      }
+
+      function fetchPro(deviceId) {
+        return fetch(API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId))
+          .then(function (res) { return res.ok ? res.json() : { isPro: false }; })
+          .then(function (data) { return Boolean(data && data.isPro); })
+          .catch(function () { return false; });
+      }
+
+      async function run() {
+        var deviceId = getDeviceId();
+        var statusEl = document.getElementById('status-text');
+        var websiteUrl = String(CFG.websiteUrl || window.location.origin).replace(/\/$/, '');
+        var target =
+          websiteUrl +
+          '/index.html?paid=1&deviceId=' +
+          encodeURIComponent(deviceId) +
+          '#dashboard';
+
+        if (!deviceId) {
+          if (statusEl) statusEl.textContent = 'Device ID not found. Redirecting to dashboard…';
+          await delay(1500);
+          window.location.href = websiteUrl + '/index.html#dashboard';
+          return;
+        }
+
+        var deadline = Date.now() + 30000;
+        while (Date.now() < deadline) {
+          if (await fetchPro(deviceId)) {
+            try { localStorage.setItem('sr_is_pro', '1'); } catch (e) {}
+            if (statusEl) statusEl.textContent = 'Pro activated! Redirecting…';
+            await delay(800);
+            window.location.href = target;
+            return;
+          }
+          if (statusEl) statusEl.textContent = 'Waiting for payment confirmation…';
+          await delay(2000);
+        }
+
+        if (statusEl) statusEl.textContent = 'Taking longer than expected. Redirecting anyway…';
+        await delay(1200);
+        window.location.href = target;
+      }
+
+      run();
+    })();
+  </script>
+</body>
+</html>

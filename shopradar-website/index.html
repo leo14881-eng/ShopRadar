@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ShopRadar — Stop guessing. See what's actually selling on Shopify. Chrome extension + global trending dashboard for cross-border sellers." />
+  <title>ShopRadar | Global Shopify Trending Dashboard</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png" />
+  <link rel="apple-touch-icon" sizes="128x128" href="apple-touch-icon.png" />
+  <meta name="theme-color" content="#030712" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            radar: {
+              950: '#030712',
+              900: '#0a0f1a',
+              800: '#111827',
+              700: '#1e293b',
+              cyan: '#22d3ee',
+              blue: '#3b82f6',
+              violet: '#8b5cf6',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            display: ['"Space Grotesk"', 'Inter', 'sans-serif'],
+          },
+          animation: {
+            'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'glow': 'glow 3s ease-in-out infinite alternate',
+            'float': 'float 6s ease-in-out infinite',
+          },
+          keyframes: {
+            glow: {
+              '0%': { boxShadow: '0 0 20px rgba(34, 211, 238, 0.3), 0 0 60px rgba(59, 130, 246, 0.15)' },
+              '100%': { boxShadow: '0 0 40px rgba(34, 211, 238, 0.6), 0 0 80px rgba(139, 92, 246, 0.3)' },
+            },
+            float: {
+              '0%, 100%': { transform: 'translateY(0px)' },
+              '50%': { transform: 'translateY(-12px)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+      background-size: 64px 64px;
+    }
+    .hero-gradient {
+      background: radial-gradient(ellipse 80% 60% at 50% -20%, rgba(34, 211, 238, 0.15), transparent),
+                  radial-gradient(ellipse 60% 40% at 80% 50%, rgba(139, 92, 246, 0.1), transparent),
+                  radial-gradient(ellipse 50% 30% at 20% 80%, rgba(59, 130, 246, 0.08), transparent);
+    }
+    .text-gradient {
+      background: linear-gradient(135deg, #22d3ee 0%, #3b82f6 50%, #8b5cf6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .glass {
+      background: rgba(17, 24, 39, 0.6);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(34, 211, 238, 0.12);
+    }
+    .paywall-blur {
+      filter: blur(6px);
+      user-select: none;
+      pointer-events: none;
+    }
+    .cta-shine {
+      background: linear-gradient(135deg, #22d3ee, #3b82f6, #8b5cf6);
+      background-size: 200% 200%;
+      animation: shine 4s ease infinite;
+    }
+    @keyframes shine {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    body.rtl { text-align: start; }
+    body.rtl .paywall-blur table { direction: rtl; }
+  </style>
+</head>
+<body class="bg-radar-950 text-gray-100 font-sans antialiased overflow-x-hidden">
+
+  <!-- Nav -->
+  <nav class="fixed top-0 inset-x-0 z-50 glass border-b border-white/5">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <a href="#" class="flex items-center gap-2.5 group">
+          <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-radar-cyan to-radar-violet flex items-center justify-center shadow-lg shadow-cyan-500/20 group-hover:shadow-cyan-500/40 transition-shadow">
+            <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <span class="font-display font-bold text-xl tracking-tight">Shop<span class="text-radar-cyan">Radar</span></span>
+        </a>
+        <div class="hidden md:flex items-center gap-8 text-sm text-gray-400">
+          <a href="#features" class="hover:text-radar-cyan transition-colors" data-i18n="nav.features">Features</a>
+          <a href="#dashboard" class="hover:text-radar-cyan transition-colors" data-i18n="nav.dashboard">Trending Dashboard</a>
+          <a href="#compare" class="hover:text-radar-cyan transition-colors" data-i18n="nav.compare">Compare</a>
+        </div>
+        <div class="flex items-center gap-3">
+          <div id="sr-lang-selector"></div>
+          <span id="pro-status-badge" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-500/10 text-gray-400 border border-white/10" data-i18n="nav.freePlan">Free Plan</span>
+          <a href="#dashboard" class="hidden sm:inline-flex text-sm text-gray-400 hover:text-white transition-colors" data-i18n="nav.viewDemo">View Demo</a>
+          <a href="#" id="nav-upgrade-btn"
+             class="js-upgrade-pro inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-radar-950 cta-shine hover:opacity-90 transition-opacity"
+             data-i18n="nav.upgradePro">
+            Upgrade to Pro
+          </a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="relative min-h-screen flex items-center pt-16 grid-bg hero-gradient">
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+      <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-radar-cyan/5 rounded-full blur-3xl animate-pulse-slow"></div>
+      <div class="absolute bottom-1/4 right-1/4 w-80 h-80 bg-radar-violet/5 rounded-full blur-3xl animate-pulse-slow" style="animation-delay: 2s"></div>
+    </div>
+
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
+      <div class="max-w-4xl mx-auto text-center">
+        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass text-xs font-medium text-radar-cyan mb-8">
+          <span class="w-1.5 h-1.5 rounded-full bg-radar-cyan animate-pulse"></span>
+          <span data-i18n="hero.badge">Built for Shopify cross-border sellers</span>
+        </div>
+
+        <h1 class="font-display text-4xl sm:text-5xl lg:text-7xl font-bold leading-[1.1] tracking-tight mb-6">
+          <span data-i18n="hero.titleLine1">Stop burning ad budget on</span>
+          <span class="text-gradient" data-i18n="hero.titleHighlight"> products nobody buys.</span>
+        </h1>
+
+        <p class="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto mb-4 leading-relaxed">
+          <span data-i18n="hero.subtitle1">You're not failing at ads — you're picking blind. ShopRadar gives you real Shopify product intelligence </span>
+          <strong class="text-gray-200 font-medium" data-i18n="hero.subtitle1Bold">before</strong><span data-i18n="hero.subtitle1End"> you spend a dollar on Facebook or TikTok.</span>
+        </p>
+        <p class="text-base text-gray-500 max-w-xl mx-auto mb-10" data-i18n="hero.subtitle2">
+          Chrome extension for instant store audits + web dashboard for global trending winners.
+        </p>
+
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
+          <a href="https://chromewebstore.google.com/detail/shopradar/PLACEHOLDER" target="_blank" rel="noopener noreferrer"
+             id="chrome-store-cta"
+             class="js-chrome-store inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-white text-radar-950 font-semibold text-base hover:bg-gray-100 transition-colors shadow-xl shadow-white/10">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+            </svg>
+            <span data-i18n="hero.ctaChrome">Add to Chrome — Free</span>
+          </a>
+          <a href="#dashboard" class="inline-flex items-center gap-2 px-8 py-4 rounded-xl glass text-gray-200 font-semibold text-base hover:border-radar-cyan/30 transition-colors">
+            <span data-i18n="hero.ctaDashboard">Explore Trending Dashboard</span>
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </a>
+        </div>
+
+        <!-- Stats strip -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto">
+          <div class="glass rounded-xl p-4 text-center">
+            <div class="text-2xl font-display font-bold text-radar-cyan" data-i18n="hero.stat1Val">50K+</div>
+            <div class="text-xs text-gray-500 mt-1" data-i18n="hero.stat1Label">Stores scanned</div>
+          </div>
+          <div class="glass rounded-xl p-4 text-center">
+            <div class="text-2xl font-display font-bold text-radar-blue" data-i18n="hero.stat2Val">Real-time</div>
+            <div class="text-xs text-gray-500 mt-1" data-i18n="hero.stat2Label">Product data</div>
+          </div>
+          <div class="glass rounded-xl p-4 text-center">
+            <div class="text-2xl font-display font-bold text-radar-violet" data-i18n="hero.stat3Val">Pro</div>
+            <div class="text-xs text-gray-500 mt-1" data-i18n="hero.stat3Label">CSV export &amp; dashboard</div>
+          </div>
+          <div class="glass rounded-xl p-4 text-center">
+            <div class="text-2xl font-display font-bold text-emerald-400" data-i18n="hero.stat4Val">$0</div>
+            <div class="text-xs text-gray-500 mt-1" data-i18n="hero.stat4Label">Free tier daily quota</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature Comparison -->
+  <section id="compare" class="py-24 lg:py-32 relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <p class="text-radar-cyan text-sm font-semibold uppercase tracking-widest mb-3" data-i18n="compare.kicker">The one-two punch</p>
+        <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold mb-4" data-i18n="compare.title">
+          Extension precision. Dashboard scale.
+        </h2>
+        <p class="text-gray-400 max-w-2xl mx-auto text-lg" data-i18n="compare.subtitle">
+          Use the Chrome extension to X-ray any store you visit. Use the web dashboard to discover what's spiking across the entire Shopify ecosystem.
+        </p>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-8">
+        <!-- Extension card -->
+        <div id="features" class="group relative rounded-2xl glass p-8 lg:p-10 hover:border-radar-cyan/30 transition-all duration-300 overflow-hidden">
+          <div class="absolute top-0 right-0 w-40 h-40 bg-radar-cyan/5 rounded-full blur-2xl group-hover:bg-radar-cyan/10 transition-colors"></div>
+          <div class="relative">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-radar-cyan/10 text-radar-cyan text-xs font-semibold mb-6">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+              <span data-i18n="compare.extBadge">Chrome Extension</span>
+            </div>
+            <h3 class="font-display text-2xl font-bold mb-3" data-i18n="compare.extTitle">Single-Store Deep Dive</h3>
+            <p class="text-gray-400 mb-8 leading-relaxed" data-i18n="compare.extDesc">
+              Open any Shopify or SFCC store, click ShopRadar in your sidebar, and instantly see product catalogs, pricing patterns, and store tech stack — no manual scraping.
+            </p>
+            <ul class="space-y-4">
+              <li class="flex items-start gap-3">
+                <span class="mt-0.5 w-5 h-5 rounded-full bg-radar-cyan/20 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-3 h-3 text-radar-cyan" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                </span>
+                <span class="text-gray-300 text-sm" data-i18n="compare.extF1">One-click Shopify / SFCC detection on any tab</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="mt-0.5 w-5 h-5 rounded-full bg-radar-cyan/20 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-3 h-3 text-radar-cyan" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                </span>
+                <span class="text-gray-300 text-sm" data-i18n="compare.extF2">Full product list with titles, prices &amp; variants</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="mt-0.5 w-5 h-5 rounded-full bg-radar-cyan/20 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-3 h-3 text-radar-cyan" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                </span>
+                <span class="text-gray-300 text-sm" data-i18n="compare.extF3">Daily free quota — Pro unlocks CSV export</span>
+              </li>
+            </ul>
+            <!-- Mock extension UI -->
+            <div class="mt-8 rounded-xl bg-radar-900/80 border border-white/5 p-4 font-mono text-xs">
+              <div class="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
+                <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
+                <span class="text-gray-500">shopify-store.com</span>
+                <span class="ml-auto text-emerald-400">Shopify ✓</span>
+              </div>
+              <div class="space-y-2 text-gray-400">
+                <div class="flex justify-between"><span>Wireless Earbuds Pro</span><span class="text-gray-200">$29.99</span></div>
+                <div class="flex justify-between"><span>Phone Grip Stand</span><span class="text-gray-200">$12.50</span></div>
+                <div class="flex justify-between"><span>LED Ring Light Mini</span><span class="text-gray-200">$18.00</span></div>
+                <div class="text-radar-cyan pt-1">+ 847 more products…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard card -->
+        <div class="group relative rounded-2xl glass p-8 lg:p-10 hover:border-radar-violet/30 transition-all duration-300 overflow-hidden border-radar-violet/10">
+          <div class="absolute top-0 right-0 w-40 h-40 bg-radar-violet/5 rounded-full blur-2xl group-hover:bg-radar-violet/10 transition-colors"></div>
+          <div class="relative">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-radar-violet/10 text-radar-violet text-xs font-semibold mb-6">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+              <span data-i18n="compare.dashBadge">Web Dashboard — Pro</span>
+            </div>
+            <h3 class="font-display text-2xl font-bold mb-3" data-i18n="compare.dashTitle">Global Trending Radar</h3>
+            <p class="text-gray-400 mb-8 leading-relaxed" data-i18n="compare.dashDesc">
+              See what's surging across thousands of Shopify stores today. Spot rising niches, benchmark revenue velocity, and find winners before they saturate — all from one dashboard.
+            </p>
+            <ul class="space-y-4">
+              <li class="flex items-start gap-3">
+                <span class="mt-0.5 w-5 h-5 rounded-full bg-radar-violet/20 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-3 h-3 text-radar-violet" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                </span>
+                <span class="text-gray-300 text-sm" data-i18n="compare.dashF1">Today's spiking products ranked by growth velocity</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="mt-0.5 w-5 h-5 rounded-full bg-radar-violet/20 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-3 h-3 text-radar-violet" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                </span>
+                <span class="text-gray-300 text-sm" data-i18n="compare.dashF2">Cross-store category trends &amp; niche heatmaps</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="mt-0.5 w-5 h-5 rounded-full bg-radar-violet/20 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-3 h-3 text-radar-violet" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                </span>
+                <span class="text-gray-300 text-sm" data-i18n="compare.dashF3">Source store URLs, revenue estimates &amp; ad signals</span>
+              </li>
+            </ul>
+            <!-- Mini chart mock -->
+            <div class="mt-8 rounded-xl bg-radar-900/80 border border-white/5 p-4">
+              <div class="flex items-end gap-1 h-16 mb-2">
+                <div class="flex-1 bg-radar-violet/30 rounded-t" style="height: 30%"></div>
+                <div class="flex-1 bg-radar-violet/40 rounded-t" style="height: 45%"></div>
+                <div class="flex-1 bg-radar-violet/50 rounded-t" style="height: 55%"></div>
+                <div class="flex-1 bg-radar-violet/60 rounded-t" style="height: 70%"></div>
+                <div class="flex-1 bg-radar-violet/80 rounded-t" style="height: 85%"></div>
+                <div class="flex-1 bg-radar-violet rounded-t" style="height: 100%"></div>
+              </div>
+              <div class="flex justify-between text-xs text-gray-500">
+                <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span class="text-radar-violet font-semibold" data-i18n="compare.chartToday">Today ↑</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VS connector -->
+      <div class="flex items-center justify-center my-10">
+        <div class="flex items-center gap-4 text-gray-600">
+          <div class="h-px w-16 sm:w-32 bg-gradient-to-r from-transparent to-radar-cyan/30"></div>
+          <span class="font-display font-bold text-sm text-gray-500 uppercase tracking-widest" data-i18n="compare.workflow">Combined workflow</span>
+          <div class="h-px w-16 sm:w-32 bg-gradient-to-l from-transparent to-radar-violet/30"></div>
+        </div>
+      </div>
+      <p class="text-center text-gray-400 max-w-xl mx-auto" data-i18n="compare.flow">
+        Discover trending products on the dashboard → Validate with the extension → Launch with confidence.
+      </p>
+    </div>
+  </section>
+
+  <!-- Trending Dashboard Paywall -->
+  <section id="dashboard" class="py-24 lg:py-32 bg-radar-900/50 relative overflow-hidden">
+    <div class="absolute inset-0 grid-bg opacity-50"></div>
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-12">
+        <p class="text-radar-violet text-sm font-semibold uppercase tracking-widest mb-3" data-i18n="dashboard.kicker">Pro Dashboard Preview</p>
+        <h2 class="font-display text-3xl sm:text-4xl font-bold mb-4" data-i18n="dashboard.title">
+          Today's Research Heat Rankings
+        </h2>
+        <p class="text-gray-400" data-i18n="dashboard.subtitle">Aggregated from anonymous ShopRadar browsing · updated hourly</p>
+
+        <!-- Account strip: shared Device ID with Chrome extension -->
+        <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <button type="button" id="device-id-bar" title="Click to copy Device ID"
+                  class="inline-flex items-center gap-2 px-4 py-2 rounded-lg glass text-xs text-gray-400 hover:text-gray-200 hover:border-radar-cyan/30 transition-colors cursor-pointer">
+            <svg class="w-3.5 h-3.5 text-radar-cyan" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            <span data-i18n="dashboard.deviceId">Device ID:</span> <code id="deviceIdText" class="text-gray-300 font-mono">—</code>
+          </button>
+          <p class="text-xs text-gray-600 max-w-sm text-center sm:text-left" data-i18n="dashboard.deviceHint">
+            Same ID as the Chrome extension — Pro subscription unlocks both surfaces.
+          </p>
+        </div>
+
+        <p class="mt-3 mx-auto max-w-2xl px-4 text-xs text-amber-400/90 text-center leading-relaxed" data-i18n="dashboard.incognitoHint">
+          Incognito/private mode creates a new Device ID — Pro stays on your checkout ID. Use a normal window and open the dashboard from the extension; contact support with your payment email if Pro is missing. Do not pay again in incognito.
+        </p>
+
+        <div id="payment-polling-banner" class="hidden mt-6 mx-auto max-w-lg px-4 py-3 rounded-lg bg-radar-cyan/10 border border-radar-cyan/20 text-sm text-radar-cyan text-center" data-i18n="dashboard.polling">
+          Confirming your Pro subscription…
+        </div>
+
+        <div id="pro-unlocked-banner" class="hidden mt-6 mx-auto max-w-lg px-4 py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-400 text-center" data-i18n="dashboard.unlocked">
+          ✓ Pro unlocked — full heat metrics visible below.
+        </div>
+
+        <p id="trending-disclaimer" class="mt-6 mx-auto max-w-3xl px-4 text-xs text-gray-500 text-center leading-relaxed" data-i18n="dashboard.disclaimer">
+          Rankings reflect how often ShopRadar users browse each product—not verified sales or ad data. Revenue figures are algorithmic estimates for comparison only. Validate with your own research before listing.
+        </p>
+      </div>
+
+      <!-- Table with paywall overlay -->
+      <div class="relative rounded-2xl glass overflow-hidden shadow-2xl shadow-black/40">
+        <!-- Table header (visible) -->
+        <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+            <span class="text-sm font-medium text-gray-300" data-i18n="dashboard.liveRanking">Heat Ranking</span>
+            <span class="text-xs text-gray-600" id="trending-date-label">Loading…</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-gray-500">
+            <span id="stores-tracked-badge" class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400">—</span>
+          </div>
+        </div>
+
+        <!-- Blurred table content -->
+        <div class="relative">
+          <div id="trending-loading" class="px-6 py-16 text-center text-gray-500 text-sm" data-i18n="dashboard.loading">
+            Loading live trending data…
+          </div>
+          <div id="trending-empty" class="hidden px-6 py-16 text-center text-gray-500 text-sm" data-i18n="dashboard.empty">
+            No trending data yet. Scan Shopify stores with the Chrome extension to populate the leaderboard.
+          </div>
+          <div id="trending-table-blur" class="hidden overflow-x-auto paywall-blur">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-gray-500 border-b border-white/5">
+                  <th class="px-6 py-3 font-medium w-12" data-i18n="dashboard.thRank">#</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="dashboard.thProduct">Product</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="dashboard.thCategory">Category</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="dashboard.thRev">Heat Valuation (not sales)</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="dashboard.thGrowth">7d Attention Δ</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="dashboard.thStore">Source Store</th>
+                </tr>
+              </thead>
+              <tbody id="trending-table-body" class="divide-y divide-white/5"></tbody>
+            </table>
+          </div>
+
+          <!-- Paywall overlay -->
+          <div id="paywall-overlay" class="absolute inset-0 flex items-center justify-center bg-radar-950/40 backdrop-blur-sm">
+            <div class="text-center px-6 py-10 max-w-md mx-4 rounded-2xl glass border border-radar-cyan/20 shadow-2xl animate-glow">
+              <!-- Lock icon -->
+              <div class="mx-auto mb-6 w-16 h-16 rounded-2xl bg-gradient-to-br from-radar-cyan/20 to-radar-violet/20 border border-radar-cyan/30 flex items-center justify-center animate-float">
+                <svg class="w-8 h-8 text-radar-cyan" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+              </div>
+
+              <h3 class="font-display text-xl sm:text-2xl font-bold mb-2" data-i18n="dashboard.paywallTitle">Pro Data Locked</h3>
+              <p class="text-gray-400 text-sm mb-2 leading-relaxed" data-i18n="dashboard.paywallDesc">
+                Heat valuation, source stores &amp; attention trends are available exclusively to Pro members.
+              </p>
+              <p class="text-gray-500 text-xs mb-8" data-i18n="dashboard.paywallSocial">
+                Join 2,000+ sellers who stopped guessing and started winning.
+              </p>
+
+              <a href="#" id="paywall-upgrade-btn"
+                 class="js-upgrade-pro inline-flex items-center gap-2.5 px-8 py-4 rounded-xl cta-shine text-radar-950 font-bold text-base hover:scale-105 transition-transform shadow-lg shadow-cyan-500/25">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <span data-i18n="dashboard.paywallCta">Upgrade to Pro with Lemon Squeezy</span>
+              </a>
+
+              <p class="mt-4 text-xs text-gray-600" data-i18n="dashboard.paywallFoot">
+                Secure checkout · Cancel anytime · Instant access
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-white/5 bg-radar-950 py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid md:grid-cols-3 gap-12 mb-12">
+        <!-- Brand -->
+        <div>
+          <div class="flex items-center gap-2.5 mb-4">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-radar-cyan to-radar-violet flex items-center justify-center">
+              <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+              </svg>
+            </div>
+            <span class="font-display font-bold text-lg">ShopRadar</span>
+          </div>
+          <p class="text-gray-500 text-sm leading-relaxed mb-6" data-i18n="footer.desc">
+            Shopify product intelligence for cross-border sellers. Stop guessing, start data-driven selection.
+          </p>
+          <a href="https://chromewebstore.google.com/detail/shopradar/PLACEHOLDER" target="_blank" rel="noopener noreferrer"
+             class="js-chrome-store inline-flex items-center gap-2 px-5 py-2.5 rounded-lg glass text-sm font-medium text-gray-300 hover:text-white hover:border-radar-cyan/30 transition-colors">
+            <svg class="w-5 h-5 text-radar-cyan" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+            </svg>
+            <span data-i18n="footer.chromeStore">Get it on Chrome Web Store</span>
+          </a>
+        </div>
+
+        <!-- Product -->
+        <div>
+          <h4 class="font-semibold text-gray-200 mb-4 text-sm uppercase tracking-wider" data-i18n="footer.product">Product</h4>
+          <ul class="space-y-3 text-sm text-gray-500">
+            <li><a href="#features" class="hover:text-radar-cyan transition-colors" data-i18n="footer.extLink">Chrome Extension</a></li>
+            <li><a href="#dashboard" class="hover:text-radar-cyan transition-colors" data-i18n="footer.dashLink">Trending Dashboard</a></li>
+            <li><a href="#compare" class="hover:text-radar-cyan transition-colors" data-i18n="footer.compareLink">Feature Comparison</a></li>
+            <li>
+              <a href="#" class="js-upgrade-pro hover:text-radar-cyan transition-colors" data-i18n="footer.pricing">
+                Pro Pricing (Lemon Squeezy)
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Legal -->
+        <div>
+          <h4 class="font-semibold text-gray-200 mb-4 text-sm uppercase tracking-wider" data-i18n="footer.legal">Legal</h4>
+          <ul class="space-y-3 text-sm text-gray-500">
+            <li><a href="privacy.html" class="hover:text-radar-cyan transition-colors" data-i18n="footer.privacy">Privacy Policy</a></li>
+            <li><a href="terms.html" class="hover:text-radar-cyan transition-colors" data-i18n="footer.terms">Terms of Service</a></li>
+            <li><a href="mailto:qinx468@gmail.com" class="hover:text-radar-cyan transition-colors" data-i18n="footer.contact">Contact Support</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-600">
+        <p data-i18n="footer.rights">&copy; 2026 ShopRadar. All rights reserved.</p>
+        <p><span data-i18n="footer.payments">Payments processed securely by</span> <a href="https://www.lemonsqueezy.com" target="_blank" rel="noopener noreferrer" class="text-gray-500 hover:text-radar-cyan transition-colors">Lemon Squeezy</a></p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="locales.js"></script>
+  <script src="locale-packs-extra.js"></script>
+  <script src="i18n.js"></script>
+  <script src="website-config.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

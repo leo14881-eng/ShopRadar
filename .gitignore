@@ -23,6 +23,7 @@ shopradar-server/tunnel-url.txt
 shopradar-server/ngrok-url.txt
 lemon-checkout.config.js
 extension-config.local.js
+shopradar-website/website-config.local.js
 dist-store/
 ShopRadar-chrome-store.zip
 
