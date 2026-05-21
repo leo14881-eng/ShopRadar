@@ -1738,6 +1738,16 @@ var ShopRadarDetectionCache = (function () {
 
 /* ----- store-detect.js ----- */
 /**
+ * 已知 SFCC 店铺域名特征（非 Shopify，products.json 恒 404）
+ * @param {string} domainOrHost
+ * @returns {boolean}
+ */
+function isKnownSfccDomainHint(domainOrHost) {
+  var host = String(domainOrHost || '').toLowerCase();
+  return host.indexOf('popsockets') !== -1 || host.indexOf('mvmt') !== -1;
+}
+
+/**
  * ShopRadar — 店铺平台检测（popup 注入 / background MAIN world 共用）
  * @returns {{ isShopify: boolean, currency: string, platform: string }}
  */
@@ -2809,6 +2819,9 @@ var ShopRadarBackgroundJobs = (function () {
   }
 
   async function fetchProductsJson(domain, tabId) {
+    if (typeof isKnownSfccDomainHint === 'function' && isKnownSfccDomainHint(domain)) {
+      throw new Error(domain + ' 为 SFCC 店铺，无 products.json 接口');
+    }
     var hosts = getProductsJsonHostCandidates(domain);
     var lastError = null;
 
@@ -3033,6 +3046,9 @@ var ShopRadarBackgroundJobs = (function () {
   }
 
   async function probeShopifyProductsJson(domain, tabId) {
+    if (typeof isKnownSfccDomainHint === 'function' && isKnownSfccDomainHint(domain)) {
+      return null;
+    }
     var hosts = getProductsJsonHostCandidates(domain);
     var tabHref = null;
     if (tabId) {

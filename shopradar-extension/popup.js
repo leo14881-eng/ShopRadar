@@ -42,71 +42,114 @@ const deviceIdTextEl = document.getElementById('deviceIdText');
 
 const panels = [stateLoading, stateSuccess, stateFail];
 
-const EXPORT_BTN_LABEL = '一键导出 Excel (Pro)';
-const EXPORT_BTN_SUCCESS_LABEL = '导出成功! ✅';
-
-const UI_TEXT = {
-  statusDetecting: '检测中',
-  statusShopify: 'Shopify 店铺',
-  statusSfcc: 'SFCC 店铺',
-  statusNotShopify: '等待店铺页',
-  statusIdleReady: '准备就绪',
-  loading: '正在检测店铺类型...',
-  successTitle: '成功检测到 Shopify 店铺！',
-  successTitleSfcc: '成功检测到 SFCC 店铺！',
+/**
+ * UI 文案：跟随 Chrome 界面语言（_locales + chrome.i18n）
+ * 切换语言：chrome://settings/languages → 重启浏览器或重载扩展
+ */
+const UI_TEXT_FALLBACK = {
+  statusDetecting: 'Detecting',
+  statusShopify: 'Shopify store',
+  statusSfcc: 'SFCC store',
+  statusNotShopify: 'Waiting for store tab',
+  statusIdleReady: 'Ready',
+  loading: 'Detecting store type…',
+  successTitle: 'Shopify store detected!',
+  successTitleSfcc: 'SFCC store detected!',
   successEmoji: '\uD83C\uDF89',
   successEmojiSfcc: '\u2705',
-  productsTitle: '最新商品 · 最多 50 件',
-  productsTitleSfcc: 'SFCC 商品列表',
-  productsLoading: '正在加载商品数据...',
-  productsEmpty: '该店铺暂无上架商品 \uD83D\uDCE6',
+  productsTitle: 'Latest products · up to 50',
+  productsTitleSfcc: 'SFCC product list',
+  productsLoading: 'Loading products…',
+  productsEmpty: 'No products listed in this store \uD83D\uDCE6',
   productsFetchFailed:
-    '商品数据加载失败。请确认已授权访问此网站，或刷新页面后重试。',
-  failTitle: '非 Shopify 网站',
-  failTitleSfcc: '非 Shopify 网站（检测到 SFCC）',
+    'Could not load products. Grant site access or refresh the page and try again.',
+  failTitle: 'Not a Shopify site',
+  failTitleSfcc: 'Not Shopify (SFCC detected)',
   failEmoji: '\u274C',
   needSitePermission:
-    '需要访问此网站权限才能检测 Shopify。请点击下方按钮授权，或在扩展详情中将「站点访问权限」设为「在所有网站上」。',
-  grantSiteAccess: '允许访问此网站',
+    'Site access is required. Click the button below or set site access to “On all sites” in extension settings.',
+  grantSiteAccess: 'Allow access to this site',
   extensionReloadHint:
-    '扩展代码已更新。请关闭本侧边栏，在 chrome://extensions 重新加载 ShopRadar，再点击扩展图标打开。',
-  limitTitle: '今日免费额度已用完',
-  limitDescDefault: '升级 Pro 可无限查询与导出 CSV。',
-  proSyncHint: '付款后请点「刷新 Pro 状态」；重装插件可用下方邮箱恢复 Pro。',
-  unlockPro: '解锁 Pro',
-  refreshProStatus: '刷新 Pro 状态',
-  refreshProStatusWorking: '正在确认…',
-  claimProLabel: '已有 Pro？用付款邮箱恢复',
-  claimProPlaceholder: '付款邮箱',
-  claimProBtn: '邮箱恢复 Pro',
-  claimProWorking: '正在验证…',
-  claimProSuccess: 'Pro 已恢复！',
-  claimProEmptyEmail: '请输入付款邮箱',
-  claimProNetworkError: '网络错误，请稍后重试',
+    'Extension updated. Close this panel, reload ShopRadar at chrome://extensions, then open it again.',
+  limitTitle: 'Daily free quota used',
+  limitDescDefault: 'Upgrade to Pro for unlimited scans and CSV export.',
+  proSyncHint:
+    'After payment, tap “Refresh Pro status”. Reinstalled? Restore Pro with your checkout email below.',
+  unlockPro: 'Unlock Pro',
+  refreshProStatus: 'Refresh Pro status',
+  refreshProStatusWorking: 'Confirming…',
+  claimProLabel: 'Already paid? Restore Pro with checkout email',
+  claimProPlaceholder: 'Checkout email',
+  claimProBtn: 'Restore Pro by email',
+  claimProWorking: 'Verifying…',
+  claimProSuccess: 'Pro restored!',
+  claimProEmptyEmail: 'Please enter your checkout email',
+  claimProNetworkError: 'Network error. Please try again.',
   paymentPendingHint:
-    '若刚付完款，等 1–2 分钟再点「刷新 Pro 状态」。',
+    'If you just paid, wait 1–2 minutes then tap “Refresh Pro status”.',
   authServerOffline:
-    '无法连接鉴权服务。请先在终端执行：cd shopradar-server → npm start，然后刷新本侧边栏。',
-  proReadySwitchShop: 'Pro 已开通',
-  idleHeroTitleReady: '准备就绪',
-  idleHeroTitleNotShopify: '当前站点不是 Shopify / SFCC',
-  idleHeroTitleNotShopifySfcc: '检测到 SFCC，请打开店铺页',
-  idleHeroTitlePermission: '需要访问此网站',
-  idleHeroTitleReload: '请重新加载扩展',
+    'Cannot reach auth server. Start shopradar-server locally, then reload this panel.',
+  proReadySwitchShop: 'Pro active',
+  proStatusActive: 'Pro active',
+  proStatusInactive: 'Free plan',
+  idleHeroTitleReady: 'Ready',
+  idleHeroTitleNotShopify: 'Not a Shopify / SFCC page',
+  idleHeroTitleNotShopifySfcc: 'SFCC detected — open a store page',
+  idleHeroTitlePermission: 'Site access required',
+  idleHeroTitleReload: 'Reload the extension',
   idleHeroDescPro:
-    '打开任意 Shopify / SFCC 店铺，即可查看商品列表与导出 Excel',
+    'Open any Shopify / SFCC store to browse products and export to Excel.',
   idleHeroDescFree:
-    '打开 Shopify / SFCC 店铺即可检测商品；升级 Pro 可无限查询并导出 Excel',
+    'Open a Shopify / SFCC store to scan products. Pro unlocks unlimited scans and Excel export.',
   idleHeroDescNotShopify:
-    '此页面无法分析商品。请切换到 Shopify 或 SFCC 店铺页面。',
+    'This page cannot be analyzed. Switch to a Shopify or SFCC store tab.',
   idleHeroDescPermission:
-    '点击下方按钮授权访问，或在扩展设置中将站点权限设为「在所有网站上」。',
+    'Tap the button below or set site access to “On all sites” in extension settings.',
   idleHeroDescReload:
-    '扩展代码已更新。请关闭侧边栏，在 chrome://extensions 重新加载 ShopRadar 后再打开。',
-  paymentConfirming: '正在确认支付结果，成功后自动返回店铺页…',
+    'Extension updated. Close the panel, reload at chrome://extensions, then reopen.',
+  paymentConfirming: 'Confirming payment…',
   paymentPendingSwitchShop:
-    '请在 Lemon 页面完成付款。付款成功后将自动返回店铺页。',
+    'Complete payment on Lemon. You will return here when successful.',
+  exportBtnLabel: 'Export to Excel (Pro)',
+  exportBtnSuccess: 'Exported! ✅',
+  accountProLabel: 'Pro status',
+  accountDeviceLabel: 'Device ID',
+  copyDeviceHint: 'Tap to copy',
+  copyDeviceDone: 'Copied ✓',
+  copyDeviceTitle: 'Click to copy Device ID',
 };
+
+function t(key, substitutions) {
+  if (typeof chrome !== 'undefined' && chrome.i18n && chrome.i18n.getMessage) {
+    try {
+      var msg = chrome.i18n.getMessage(key, substitutions);
+      if (msg) {
+        return msg;
+      }
+    } catch (i18nErr) {
+      /* ignore */
+    }
+  }
+  var fb = UI_TEXT_FALLBACK[key];
+  return fb != null ? String(fb) : String(key);
+}
+
+const UI_TEXT = new Proxy(Object.create(null), {
+  get: function (_target, prop) {
+    if (typeof prop !== 'string') {
+      return undefined;
+    }
+    return t(prop);
+  },
+});
+
+function getExportBtnLabel() {
+  return t('exportBtnLabel');
+}
+
+function getExportBtnSuccessLabel() {
+  return t('exportBtnSuccess');
+}
 
 /** CSV 表头 message key（见 _locales 各语言 messages.json） */
 const EXPORT_CSV_HEADER_KEYS = [
@@ -844,6 +887,13 @@ function readActiveCurrencyFromPage() {
  * 将界面文案写入 DOM（解决 HTML 文件中文乱码）
  */
 function applyUiStrings() {
+  if (typeof chrome !== 'undefined' && chrome.i18n && chrome.i18n.getUILanguage) {
+    try {
+      document.documentElement.lang = chrome.i18n.getUILanguage();
+    } catch (langErr) {
+      /* ignore */
+    }
+  }
   statusIndicator.title = UI_TEXT.statusDetecting;
   if (loadingTextEl) loadingTextEl.textContent = UI_TEXT.loading;
   if (successEmojiEl) successEmojiEl.textContent = UI_TEXT.successEmoji;
@@ -862,7 +912,7 @@ function applyUiStrings() {
     grantAccessBtnEl.classList.add('hidden');
   }
   if (exportBtn) {
-    exportBtn.textContent = EXPORT_BTN_LABEL;
+    exportBtn.textContent = getExportBtnLabel();
   }
   if (limitOverlayTitleEl) {
     limitOverlayTitleEl.textContent = UI_TEXT.limitTitle;
@@ -886,8 +936,28 @@ function applyUiStrings() {
   if (claimLabelEl) {
     claimLabelEl.textContent = UI_TEXT.claimProLabel;
   }
+  if (idleHeroTitleEl) {
+    idleHeroTitleEl.textContent = UI_TEXT.idleHeroTitleReady;
+  }
   if (idleHeroDescEl) {
     idleHeroDescEl.textContent = UI_TEXT.idleHeroDescPro;
+  }
+  var accountProLabelEl = document.getElementById('account-pro-label');
+  if (accountProLabelEl) {
+    accountProLabelEl.textContent = UI_TEXT.accountProLabel;
+  }
+  var accountDeviceLabelEl = document.querySelector(
+    '.account-row-device .account-label'
+  );
+  if (accountDeviceLabelEl) {
+    accountDeviceLabelEl.textContent = UI_TEXT.accountDeviceLabel;
+  }
+  if (deviceIdBarEl) {
+    deviceIdBarEl.title = UI_TEXT.copyDeviceTitle;
+    var hintEl = deviceIdBarEl.querySelector('.account-copy-hint');
+    if (hintEl) {
+      hintEl.textContent = UI_TEXT.copyDeviceHint;
+    }
   }
 }
 
@@ -931,10 +1001,10 @@ function updateProStatusBar(isPro) {
   if (!proStatusTextEl) {
     return;
   }
-  proStatusTextEl.textContent = isPro ? 'Pro 已开通' : '未开通 Pro';
+  proStatusTextEl.textContent = isPro ? UI_TEXT.proStatusActive : UI_TEXT.proStatusInactive;
   proStatusTextEl.className = 'account-value ' + (isPro ? 'pro-status-on' : 'pro-status-off');
   if (idleHeroTitleEl) {
-    idleHeroTitleEl.textContent = isPro ? 'Pro 已开通' : '未开通 Pro';
+    idleHeroTitleEl.textContent = isPro ? UI_TEXT.proStatusActive : UI_TEXT.proStatusInactive;
   }
   if (idleHeroDescEl) {
     idleHeroDescEl.textContent = isPro
@@ -1143,11 +1213,11 @@ function bindDeviceIdBar() {
       const hintEl = deviceIdBarEl.querySelector('.account-copy-hint');
       const prevHint = hintEl ? hintEl.textContent : '';
       if (hintEl) {
-        hintEl.textContent = '已复制 ✓';
+        hintEl.textContent = UI_TEXT.copyDeviceDone;
       }
       setTimeout(() => {
         if (hintEl) {
-          hintEl.textContent = prevHint || '点击复制';
+          hintEl.textContent = prevHint || UI_TEXT.copyDeviceHint;
         }
       }, 1200);
     } catch (error) {
@@ -1880,10 +1950,9 @@ async function refreshProStatusFromServer(options) {
           }
         }
       }
-      await loadProFlagFromStorage();
-      if (isProSubscriber) {
+      if (await isPaymentRecentlyPending()) {
         console.warn(
-          '[ShopRadar] 服务端未确认 Pro，保留本地 Pro 标记。请核对 Device ID 是否与付款时一致，或点「刷新 Pro 状态」。'
+          '[ShopRadar] 付款确认中，暂时保留本地 Pro 标记，等待 Webhook 写入…'
         );
         return true;
       }
@@ -2053,8 +2122,20 @@ async function resolveExportData() {
     try {
       const tab = await getActiveBrowserTab();
       if (tab?.id && extractDomain(tab.url) === domain) {
-        const rawJson = await fetchProductsJson(domain, tab.id);
-        const freshRaw = Array.isArray(rawJson?.products) ? rawJson.products : [];
+        const storeType = cache.storeType || currentStoreType || 'shopify';
+        let freshRaw = [];
+
+        if (storeType === 'sfcc') {
+          const parsed = await fetchSfccProducts(tab.id);
+          freshRaw = Array.isArray(parsed?.products) ? parsed.products : [];
+        } else if (typeof isKnownSfccDomainHint === 'function' && isKnownSfccDomainHint(domain)) {
+          const parsed = await fetchSfccProducts(tab.id);
+          freshRaw = Array.isArray(parsed?.products) ? parsed.products : [];
+        } else {
+          const rawJson = await fetchProductsJson(domain, tab.id);
+          freshRaw = Array.isArray(rawJson?.products) ? rawJson.products : [];
+        }
+
         if (freshRaw.length) {
           aligned = ShopRadarData.alignRawToCleaned(freshRaw, cleaned);
           exportRaw = aligned.slice(0, cleaned.length);
@@ -2062,7 +2143,7 @@ async function resolveExportData() {
             products: cleaned,
             rawProducts: exportRaw,
             currency: cache.currency || getActiveCurrencyCode(),
-            storeType: cache.storeType || currentStoreType || 'shopify',
+            storeType: storeType === 'sfcc' ? 'sfcc' : cache.storeType || currentStoreType || 'shopify',
           });
         }
       }
@@ -2084,10 +2165,10 @@ function showExportSuccessFeedback() {
   if (exportSuccessTimer) {
     clearTimeout(exportSuccessTimer);
   }
-  exportBtn.textContent = EXPORT_BTN_SUCCESS_LABEL;
+  exportBtn.textContent = getExportBtnSuccessLabel();
   exportBtn.classList.add('is-success');
   exportSuccessTimer = setTimeout(() => {
-    exportBtn.textContent = EXPORT_BTN_LABEL;
+    exportBtn.textContent = getExportBtnLabel();
     exportBtn.classList.remove('is-success');
     exportSuccessTimer = null;
   }, 2000);
@@ -2137,7 +2218,7 @@ function bindExportButton() {
   if (!exportBtn) {
     return;
   }
-  exportBtn.textContent = EXPORT_BTN_LABEL;
+  exportBtn.textContent = getExportBtnLabel();
   exportBtn.addEventListener('click', handleExportClick);
 }
 
@@ -3768,6 +3849,25 @@ async function runDetection(options) {
       return buildSfccDetection(domain, tab.id);
     }
 
+    const knownSfccHint =
+      typeof isKnownSfccDomainHint === 'function' && isKnownSfccDomainHint(domain);
+    if (knownSfccHint) {
+      const sfccAttempts = fast ? 4 : 8;
+      const sfccInterval = fast ? 300 : 350;
+      for (let sfccTry = 0; sfccTry < sfccAttempts; sfccTry++) {
+        if (await probeSfccByPageMarkers(tab.id)) {
+          await ShopRadarDetectionCache.clearNegative(domain);
+          debugLog('[ShopRadar] 已知 SFCC 店铺标记探测成功，第', sfccTry + 1, '次');
+          return buildSfccDetection(domain, tab.id);
+        }
+        if (sfccTry < sfccAttempts - 1) {
+          await delay(sfccInterval);
+        }
+      }
+      await ShopRadarDetectionCache.clearNegative(domain);
+      return buildSfccDetection(domain, tab.id);
+    }
+
     const maxAttempts = fast ? 4 : DETECTION_MAX_ATTEMPTS;
     const retryInterval = fast ? 300 : DETECTION_RETRY_INTERVAL_MS;
 
@@ -4303,6 +4403,9 @@ async function probeShopifyByProductsJson(domain, tabId, options) {
   if (!domain || !tabId || isNonRetailDomain(domain)) {
     return false;
   }
+  if (typeof isKnownSfccDomainHint === 'function' && isKnownSfccDomainHint(domain)) {
+    return false;
+  }
 
   const timeoutMs =
     options && options.timeoutMs ? Number(options.timeoutMs) : 0;
@@ -4411,6 +4514,9 @@ async function resolveTabReferenceHref(tabId) {
  * @returns {Promise<object>}
  */
 async function fetchProductsJson(domain, tabId) {
+  if (typeof isKnownSfccDomainHint === 'function' && isKnownSfccDomainHint(domain)) {
+    throw new Error(domain + ' 为 SFCC 店铺，无 products.json 接口');
+  }
   const hosts = getProductsJsonHostCandidates(domain);
   const cachedHref = await resolveTabReferenceHref(tabId);
 

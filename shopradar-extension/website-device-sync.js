@@ -315,6 +315,30 @@
   });
 
   try {
+    window.addEventListener('message', function (event) {
+      if (event.source !== window) {
+        return;
+      }
+      var data = event.data;
+      if (!data || data.type !== 'SR_REQUEST_DEVICE_SYNC') {
+        return;
+      }
+      chrome.storage.local.get([STORAGE_DEVICE], function (result) {
+        if (chrome.runtime.lastError) {
+          return;
+        }
+        var extId =
+          result && result[STORAGE_DEVICE]
+            ? String(result[STORAGE_DEVICE]).trim()
+            : '';
+        reconcile(extId, readWebDeviceId());
+      });
+    });
+  } catch (msgBridgeErr) {
+    /* ignore */
+  }
+
+  try {
     var onDeviceSyncRequest = function (message, sender, sendResponse) {
       if (!message || message.type !== 'SR_REQUEST_DEVICE_SYNC') {
         return { status: 'ok' };

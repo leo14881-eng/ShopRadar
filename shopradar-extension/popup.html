@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -805,19 +805,19 @@
   <div class="container">
     <header class="header">
       <h1 class="header-title">ShopRadar</h1>
-      <span class="status-indicator" id="statusIndicator" title="检测中"></span>
+      <span class="status-indicator" id="statusIndicator" title="Detecting"></span>
     </header>
 
     <main class="content" id="mainContent">
       <section id="idleHero" class="idle-hero hidden" aria-hidden="true">
         <div class="idle-hero-icon idle-hero-icon--neutral" aria-hidden="true">🛍</div>
-        <p class="idle-hero-title" id="idleHeroTitle">准备就绪</p>
+        <p class="idle-hero-title" id="idleHeroTitle">Ready</p>
         <p class="idle-hero-desc" id="idleHeroDesc">
-          打开任意 Shopify / SFCC 店铺，即可查看商品列表与导出 Excel
+          Open any Shopify / SFCC store to browse products and export to Excel.
         </p>
         <p class="idle-hero-domain hidden" id="idleHeroDomain"></p>
         <button type="button" id="grant-access-btn" class="idle-hero-action hidden">
-          允许访问此网站
+          Allow access to this site
         </button>
       </section>
 
@@ -854,25 +854,25 @@
       <p class="api-env-bar hidden" id="api-env-bar" aria-hidden="true"></p>
       <div class="account-card">
         <div class="account-row">
-          <span class="account-label">Pro 状态</span>
+          <span class="account-label" id="account-pro-label">Pro status</span>
           <span id="pro-status-text" class="account-value">—</span>
         </div>
         <div
           class="account-row account-row-device"
           id="device-id-bar"
-          title="点击复制 Device ID"
+          title="Click to copy Device ID"
           role="button"
           tabindex="0"
         >
           <span class="account-label">Device ID</span>
           <div class="account-device-wrap">
             <code id="deviceIdText" class="account-device-id">—</code>
-            <span class="account-copy-hint">点击复制</span>
+            <span class="account-copy-hint" id="account-copy-hint">Tap to copy</span>
           </div>
         </div>
       </div>
       <footer class="footer footer-export hidden" id="export-footer">
-        <button type="button" id="export-btn">一键导出 Excel (Pro)</button>
+        <button type="button" id="export-btn">Export to Excel (Pro)</button>
       </footer>
     </div>
   </div>
@@ -884,9 +884,9 @@
       <button type="button" id="unlock-pro-btn"></button>
       <button type="button" id="refresh-pro-btn" class="refresh-pro-btn"></button>
       <div class="claim-pro-section">
-        <p id="claim-pro-label" class="claim-pro-label">已有 Pro？用付款邮箱恢复</p>
+        <p id="claim-pro-label" class="claim-pro-label">Already paid? Restore Pro with checkout email</p>
         <input type="email" id="claim-pro-email" autocomplete="email" spellcheck="false" />
-        <button type="button" id="claim-pro-btn">邮箱恢复 Pro</button>
+        <button type="button" id="claim-pro-btn">Restore Pro by email</button>
         <p id="claim-pro-msg" class="claim-pro-msg hidden" aria-live="polite"></p>
       </div>
     </div>

@@ -773,6 +773,13 @@
           resolve();
         }
       }
+      function requestExtensionSync() {
+        try {
+          window.postMessage({ type: 'SR_REQUEST_DEVICE_SYNC', source: 'shopradar-website' }, '*');
+        } catch (postErr) {
+          /* ignore */
+        }
+      }
       window.addEventListener(
         'shopradar:device-synced',
         function (event) {
@@ -797,6 +804,8 @@
         },
         { once: true }
       );
+      requestExtensionSync();
+      setTimeout(requestExtensionSync, 800);
       setTimeout(finish, 5000);
     });
   }

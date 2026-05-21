@@ -1,4 +1,14 @@
 /**
+ * 已知 SFCC 店铺域名特征（非 Shopify，products.json 恒 404）
+ * @param {string} domainOrHost
+ * @returns {boolean}
+ */
+function isKnownSfccDomainHint(domainOrHost) {
+  var host = String(domainOrHost || '').toLowerCase();
+  return host.indexOf('popsockets') !== -1 || host.indexOf('mvmt') !== -1;
+}
+
+/**
  * ShopRadar — 店铺平台检测（popup 注入 / background MAIN world 共用）
  * @returns {{ isShopify: boolean, currency: string, platform: string }}
  */
