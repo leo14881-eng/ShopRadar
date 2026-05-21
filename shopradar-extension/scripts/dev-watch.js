@@ -14,7 +14,8 @@ const BUILD_SCRIPT = path.join(__dirname, 'build-sw-bundle.js');
 
 const WATCH_FILES = [
   'extension-config.js',
-  'local-dev-config.js',
+  'extension-env.js',
+  'extension-env.production.js',
   'extension-guard.js',
   'shop-permissions.js',
   'shop-processor.js',

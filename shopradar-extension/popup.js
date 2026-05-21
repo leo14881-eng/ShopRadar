@@ -14,6 +14,7 @@ const productsLoading = document.getElementById('productsLoading');
 const productsEmpty = document.getElementById('productsEmpty');
 const productListEl = document.getElementById('product-list');
 const exportBtn = document.getElementById('export-btn');
+const exportFooterEl = document.getElementById('export-footer');
 const loadingTextEl = document.getElementById('loadingText');
 const successEmojiEl = document.getElementById('successEmoji');
 const successTitleEl = document.getElementById('successTitle');
@@ -27,8 +28,15 @@ const limitOverlayTitleEl = document.getElementById('limitOverlayTitle');
 const limitOverlayDescEl = document.getElementById('limitOverlayDesc');
 const refreshProBtn = document.getElementById('refresh-pro-btn');
 const unlockProBtn = document.getElementById('unlock-pro-btn');
+const claimProEmailEl = document.getElementById('claim-pro-email');
+const claimProBtn = document.getElementById('claim-pro-btn');
+const claimProMsgEl = document.getElementById('claim-pro-msg');
 const deviceIdBarEl = document.getElementById('device-id-bar');
-const openDashboardLinkEl = document.getElementById('open-dashboard-link');
+const proStatusTextEl = document.getElementById('pro-status-text');
+const idleHeroEl = document.getElementById('idleHero');
+const idleHeroTitleEl = document.getElementById('idleHeroTitle');
+const idleHeroDescEl = document.getElementById('idleHeroDesc');
+const apiEnvBarEl = document.getElementById('api-env-bar');
 const deviceIdTextEl = document.getElementById('deviceIdText');
 
 const panels = [stateLoading, stateSuccess, stateFail];
@@ -62,19 +70,28 @@ const UI_TEXT = {
     '扩展代码已更新。请关闭本侧边栏，在 chrome://extensions 重新加载 ShopRadar，再点击扩展图标打开。',
   limitTitle: '今日免费额度已用完',
   limitDescDefault: '升级 Pro 可无限查询与导出 CSV。',
-  proSyncHint: '付款后请点下方「刷新 Pro 状态」，一般几秒内自动开通。',
+  proSyncHint: '付款后请点「刷新 Pro 状态」；重装插件可用下方邮箱恢复 Pro。',
   unlockPro: '解锁 Pro',
   refreshProStatus: '刷新 Pro 状态',
   refreshProStatusWorking: '正在确认…',
+  claimProLabel: '已有 Pro？用付款邮箱恢复',
+  claimProPlaceholder: '付款邮箱',
+  claimProBtn: '邮箱恢复 Pro',
+  claimProWorking: '正在验证…',
+  claimProSuccess: 'Pro 已恢复！',
+  claimProEmptyEmail: '请输入付款邮箱',
+  claimProNetworkError: '网络错误，请稍后重试',
   paymentPendingHint:
     '若刚付完款，等 1–2 分钟再点「刷新 Pro 状态」。',
   authServerOffline:
     '无法连接鉴权服务。请先在终端执行：cd shopradar-server → npm start，然后刷新本侧边栏。',
-  proReadySwitchShop:
-    'Pro 已开通！正在返回付款前的店铺页面…',
+  proReadySwitchShop: 'Pro 已开通',
+  idleHeroDescPro:
+    '打开任意 Shopify / SFCC 店铺，即可查看商品列表与导出 Excel',
+  idleHeroDescFree: '升级 Pro 后可无限查询并导出 Excel',
   paymentConfirming: '正在确认支付结果，成功后自动返回店铺页…',
   paymentPendingSwitchShop:
-    '正在等待支付确认。成功后 extension 会自动关闭本页并返回店铺标签页。',
+    '请在 Lemon 页面完成付款。付款成功后将自动返回店铺页。',
 };
 
 /** CSV 表头 message key（见 _locales 各语言 messages.json） */
@@ -164,14 +181,21 @@ const CACHE_STALE_MS = 45 * 1000;
 const PRODUCT_AUTO_REFRESH_MS = 90 * 1000;
 
 const EXT_CFG =
-  typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined'
-    ? SHOPRADAR_EXTENSION_CONFIG
-    : { apiBase: 'https://api.shopradar.uk', websiteUrl: 'https://shopradar.uk', debug: false };
+  typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getConfig
+    ? ShopRadarEnv.getConfig()
+    : typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined'
+      ? SHOPRADAR_EXTENSION_CONFIG
+      : {
+          env: 'production',
+          apiBase: 'https://api.shopradar.uk',
+          websiteUrl: 'https://shopradar.uk',
+          debug: false,
+        };
 
-const AUTH_API_BASE = String(EXT_CFG.apiBase || 'https://api.shopradar.uk').replace(
-  /\/$/,
-  ''
-);
+const AUTH_API_BASE =
+  typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getApiBase
+    ? ShopRadarEnv.getApiBase()
+    : String(EXT_CFG.apiBase || 'https://api.shopradar.uk').replace(/\/$/, '');
 
 const SHOPRADAR_WEBSITE_URL = String(
   EXT_CFG.websiteUrl || 'https://shopradar.uk'
@@ -250,6 +274,7 @@ function tabsSendMessage(tabId, message, options) {
 const AUTH_API_CHECK_LIMIT = AUTH_API_BASE + '/api/check-limit';
 const AUTH_API_PRO_STATUS = AUTH_API_BASE + '/api/pro-status';
 const AUTH_API_VERIFY_EXPORT = AUTH_API_BASE + '/api/verify-export';
+const AUTH_API_CLAIM_PRO = AUTH_API_BASE + '/api/claim-pro';
 
 /** Lemon 结账链接：在 lemon-checkout.config.js 中配置 SHOPRADAR_LEMON_CHECKOUT_URL */
 const LEMON_SQUEEZY_CHECKOUT_URL =
@@ -822,7 +847,9 @@ function applyUiStrings() {
     grantAccessBtnEl.textContent = UI_TEXT.grantSiteAccess;
     grantAccessBtnEl.classList.add('hidden');
   }
-  if (exportBtn) exportBtn.textContent = EXPORT_BTN_LABEL;
+  if (exportBtn) {
+    exportBtn.textContent = EXPORT_BTN_LABEL;
+  }
   if (limitOverlayTitleEl) {
     limitOverlayTitleEl.textContent = UI_TEXT.limitTitle;
   }
@@ -834,6 +861,19 @@ function applyUiStrings() {
   }
   if (refreshProBtn) {
     refreshProBtn.textContent = UI_TEXT.refreshProStatus;
+  }
+  if (claimProEmailEl) {
+    claimProEmailEl.placeholder = UI_TEXT.claimProPlaceholder;
+  }
+  if (claimProBtn) {
+    claimProBtn.textContent = UI_TEXT.claimProBtn;
+  }
+  var claimLabelEl = document.getElementById('claim-pro-label');
+  if (claimLabelEl) {
+    claimLabelEl.textContent = UI_TEXT.claimProLabel;
+  }
+  if (idleHeroDescEl) {
+    idleHeroDescEl.textContent = UI_TEXT.idleHeroDescPro;
   }
 }
 
@@ -867,6 +907,57 @@ async function getOrCreateDeviceId() {
   return deviceId;
 }
 
+function setExportButtonVisible(visible) {
+  if (exportFooterEl) {
+    exportFooterEl.classList.toggle('hidden', !visible);
+  }
+}
+
+function updateProStatusBar(isPro) {
+  if (!proStatusTextEl) {
+    return;
+  }
+  proStatusTextEl.textContent = isPro ? 'Pro 已开通' : '未开通 Pro';
+  proStatusTextEl.className = 'account-value ' + (isPro ? 'pro-status-on' : 'pro-status-off');
+  if (idleHeroTitleEl) {
+    idleHeroTitleEl.textContent = isPro ? 'Pro 已开通' : '未开通 Pro';
+  }
+  if (idleHeroDescEl) {
+    idleHeroDescEl.textContent = isPro
+      ? UI_TEXT.idleHeroDescPro
+      : UI_TEXT.idleHeroDescFree;
+  }
+  if (idleHeroEl && idleHeroEl.classList.contains('hidden') === false) {
+    const iconEl = idleHeroEl.querySelector('.idle-hero-icon');
+    if (iconEl) {
+      iconEl.textContent = isPro ? '\u2713' : '\u2728';
+    }
+  }
+}
+
+async function syncProStatusBar() {
+  updateProStatusBar(await hasProAccess());
+}
+
+function setProSummaryOnlyMode(enabled) {
+  if (mainContent) {
+    mainContent.classList.toggle('pro-summary-only', Boolean(enabled));
+  }
+  if (idleHeroEl) {
+    idleHeroEl.classList.toggle('hidden', !enabled);
+    if (enabled) {
+      idleHeroEl.removeAttribute('aria-hidden');
+    } else {
+      idleHeroEl.setAttribute('aria-hidden', 'true');
+    }
+  }
+  if (enabled && statusIndicator) {
+    statusIndicator.classList.remove('fail');
+    statusIndicator.classList.add('success');
+    statusIndicator.title = 'Pro 已开通';
+  }
+}
+
 /**
  * 在侧边栏底部展示 Device ID，并输出到 Console（便于配置白名单）
  * @param {string} deviceId
@@ -876,18 +967,29 @@ function showDeviceIdInPanel(deviceId) {
   if (deviceIdTextEl) {
     deviceIdTextEl.textContent = id || '—';
   }
-  updateDashboardLink(deviceId);
+  if (apiEnvBarEl) {
+    const showEnv =
+      EXT_CFG.debug ||
+      (typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.isDevelopment());
+    if (showEnv) {
+      apiEnvBarEl.textContent = 'API: ' + AUTH_API_BASE;
+      apiEnvBarEl.classList.remove('hidden');
+      apiEnvBarEl.removeAttribute('aria-hidden');
+    } else {
+      apiEnvBarEl.textContent = '';
+      apiEnvBarEl.classList.add('hidden');
+      apiEnvBarEl.setAttribute('aria-hidden', 'true');
+    }
+  }
+  void syncProStatusBar();
+  debugLog('[ShopRadar] 当前环境:', EXT_CFG.env || 'unknown', '| API:', AUTH_API_BASE);
   debugLog('[ShopRadar] 当前设备 ID (sr_device_id):', id);
   debugLog(
     '[ShopRadar] 白名单：将上述 ID 填入 shopradar-server/whitelist.json 的 deviceIds 数组'
   );
 }
 
-/**
- * 构建官网爆品大盘链接（携带 deviceId，与官网 localStorage 同步）
- * @param {string} deviceId
- * @returns {string}
- */
+/** 构建官网爆品大盘链接（内部同步仍可能使用） */
 function buildDashboardUrl(deviceId) {
   const base = SHOPRADAR_WEBSITE_URL || 'https://shopradar.uk';
   const id = String(deviceId || '').trim();
@@ -895,23 +997,6 @@ function buildDashboardUrl(deviceId) {
     return base + '/#dashboard';
   }
   return base + '/?deviceId=' + encodeURIComponent(id) + '#dashboard';
-}
-
-function updateDashboardLink(deviceId) {
-  if (!openDashboardLinkEl) {
-    return;
-  }
-  openDashboardLinkEl.href = buildDashboardUrl(deviceId);
-}
-
-function bindOpenDashboardLink() {
-  if (!openDashboardLinkEl) {
-    return;
-  }
-  openDashboardLinkEl.addEventListener('click', async () => {
-    const deviceId = await getOrCreateDeviceId();
-    openDashboardLinkEl.href = buildDashboardUrl(deviceId);
-  });
 }
 
 /**
@@ -922,7 +1007,7 @@ function bindDeviceIdBar() {
     return;
   }
 
-  deviceIdBarEl.addEventListener('click', async () => {
+  async function copyDeviceId() {
     const stored = await chrome.storage.local.get(STORAGE_DEVICE_ID_KEY);
     const id = stored[STORAGE_DEVICE_ID_KEY];
     if (!id) {
@@ -931,17 +1016,26 @@ function bindDeviceIdBar() {
 
     try {
       await navigator.clipboard.writeText(String(id));
-      const prev = deviceIdTextEl ? deviceIdTextEl.textContent : '';
-      if (deviceIdTextEl) {
-        deviceIdTextEl.textContent = '已复制 ✓';
+      const hintEl = deviceIdBarEl.querySelector('.account-copy-hint');
+      const prevHint = hintEl ? hintEl.textContent : '';
+      if (hintEl) {
+        hintEl.textContent = '已复制 ✓';
       }
       setTimeout(() => {
-        if (deviceIdTextEl) {
-          deviceIdTextEl.textContent = prev;
+        if (hintEl) {
+          hintEl.textContent = prevHint || '点击复制';
         }
       }, 1200);
     } catch (error) {
       console.warn('[ShopRadar] 复制失败，请手动选择复制:', error);
+    }
+  }
+
+  deviceIdBarEl.addEventListener('click', copyDeviceId);
+  deviceIdBarEl.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      void copyDeviceId();
     }
   });
 }
@@ -1056,10 +1150,6 @@ async function checkQueryLimitOnce(deviceId, domain) {
 
       if (response.status === 401 && accessToken) {
         await clearStoredAccessToken();
-        if (attempt < maxAttempts - 1) {
-          await delay(200);
-          continue;
-        }
       }
 
       if (response.status >= 500 && attempt < maxAttempts - 1) {
@@ -1107,7 +1197,8 @@ function getProMaskInertTargets() {
   return [
     mainContent,
     document.querySelector('.header'),
-    document.querySelector('.footer'),
+    document.querySelector('.panel-footer'),
+    exportFooterEl,
     deviceIdBarEl,
   ].filter(Boolean);
 }
@@ -1142,6 +1233,7 @@ function showLimitOverlay(message) {
       const base = message || UI_TEXT.limitDescDefault;
       limitOverlayDescEl.textContent = base + '\n\n' + UI_TEXT.proSyncHint;
     }
+    setClaimProMessage('');
     proMaskEl.inert = false;
     proMaskEl.removeAttribute('aria-hidden');
     proMaskEl.classList.add('visible');
@@ -1176,6 +1268,7 @@ function hideLimitOverlay() {
     if (limitOverlayDescEl) {
       limitOverlayDescEl.textContent = UI_TEXT.limitDescDefault;
     }
+    setClaimProMessage('');
     proMaskEl.classList.remove('visible');
     proMaskEl.setAttribute('aria-hidden', 'true');
     proMaskEl.inert = true;
@@ -1200,20 +1293,31 @@ function isStaleInit(runId) {
 }
 
 /**
- * 是否为本会话已确认的付费 Pro（服务端 isPro 或付款确认窗口内）
+ * 是否为本会话已确认的付费 Pro（内存标记，由服务端 isPro 或 loadProFlag 设置）
  */
 function isPaidProSubscriber() {
   return isProSubscriber;
 }
 
-/** 本地 storage 是否已持久化 Pro（仅服务端确认后写入） */
+/** 本地 storage 或内存中是否已有 Pro 标记（不含付款中乐观态） */
 async function isPersistedProSubscriber() {
+  if (isProSubscriber) {
+    return true;
+  }
   try {
     const stored = await chrome.storage.local.get(STORAGE_IS_PRO_KEY);
     return stored[STORAGE_IS_PRO_KEY] === true;
   } catch (storageErr) {
     return false;
   }
+}
+
+/** 当前是否已确认 Pro（服务端或本地持久化，不含「刚点结账未付款」） */
+async function hasProAccess() {
+  if (isProSubscriber) {
+    return true;
+  }
+  return await isPersistedProSubscriber();
 }
 
 async function markPaymentPending() {
@@ -1224,7 +1328,6 @@ async function markPaymentPending() {
   } catch (pendingErr) {
     /* ignore */
   }
-  isProSubscriber = true;
 }
 
 async function clearPaymentPending() {
@@ -1232,9 +1335,6 @@ async function clearPaymentPending() {
     await chrome.storage.session.remove(STORAGE_PAYMENT_PENDING_KEY);
   } catch (pendingErr) {
     /* ignore */
-  }
-  if (!(await isPersistedProSubscriber())) {
-    isProSubscriber = false;
   }
 }
 
@@ -1256,14 +1356,15 @@ async function pollProActivationAfterCheckout(maxWaitMs) {
   const deadline = Date.now() + (maxWaitMs || 30000);
   while (Date.now() < deadline) {
     const ok = await refreshProStatusWithWebsiteSync({ skipResume: true });
-    if (ok || isProSubscriber) {
+    if (ok || (await isPersistedProSubscriber())) {
       await clearPaymentPending();
       hideLimitOverlay();
       return true;
     }
     await delay(2000);
   }
-  return isProSubscriber;
+  await loadProFlagFromStorage();
+  return await isPersistedProSubscriber();
 }
 
 /**
@@ -1285,20 +1386,13 @@ function startBackgroundProPollIfPending(runId) {
         runId === initRunId
       ) {
         const ok = await refreshProStatusWithWebsiteSync({ skipResume: true });
-        if (ok) {
+        if (ok && (await hasProAccess())) {
           await clearPaymentPending();
           hideLimitOverlay();
           schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
           return;
         }
         await delay(3000);
-      }
-      if (pollGen === backgroundProPollGeneration && runId === initRunId) {
-        await clearPaymentPending();
-        await loadProFlagFromStorage();
-        if (!(await isPersistedProSubscriber())) {
-          isProSubscriber = false;
-        }
       }
     })().catch(function () {});
   });
@@ -1308,14 +1402,8 @@ async function ensureQueryAllowed(domain) {
   const deviceId = await getOrCreateDeviceId();
   showDeviceIdInPanel(deviceId);
 
-  if (await isPaymentRecentlyPending()) {
-    hideLimitOverlay();
-    return true;
-  }
-
   await refreshProStatusWithWebsiteSync({ skipResume: true });
-  if (await isPersistedProSubscriber()) {
-    isProSubscriber = true;
+  if (await hasProAccess()) {
     hideLimitOverlay();
     return true;
   }
@@ -1328,15 +1416,6 @@ async function ensureQueryAllowed(domain) {
     isProSubscriber = true;
     await persistProFlag(true);
     await clearPaymentPending();
-  }
-
-  if (await isPersistedProSubscriber()) {
-    isProSubscriber = true;
-    hideLimitOverlay();
-    return true;
-  }
-
-  if (await isPaymentRecentlyPending()) {
     hideLimitOverlay();
     return true;
   }
@@ -1345,11 +1424,7 @@ async function ensureQueryAllowed(domain) {
     const limitMsg = result.authOffline
       ? result.msg || UI_TEXT.authServerOffline
       : result.msg || UI_TEXT.limitTitle;
-    showLimitOverlay(
-      (await isPaymentRecentlyPending())
-        ? limitMsg + '\n\n' + UI_TEXT.paymentPendingHint
-        : limitMsg
-    );
+    showLimitOverlay(limitMsg);
     return false;
   }
 
@@ -1377,31 +1452,24 @@ function buildLemonSqueezyCheckoutUrl(deviceId) {
     const url = new URL(base);
     url.searchParams.set('checkout[custom][device_id]', deviceId);
     url.searchParams.set('checkout[custom][source]', 'shopradar_extension');
-    const websiteUrl = (
-      SHOPRADAR_WEBSITE_URL || 'https://shopradar.uk'
-    ).replace(/\/$/, '');
+    const websiteBase = (SHOPRADAR_WEBSITE_URL || 'https://shopradar.uk').replace(
+      /\/$/,
+      ''
+    );
     url.searchParams.set(
       'checkout[redirect_url]',
-      websiteUrl +
+      websiteBase +
         '/success.html?deviceId=' +
         encodeURIComponent(deviceId)
     );
     return url.toString();
   } catch (urlError) {
     const sep = base.indexOf('?') >= 0 ? '&' : '?';
-    const websiteUrl = encodeURIComponent(
-      (SHOPRADAR_WEBSITE_URL || 'https://shopradar.uk').replace(/\/$/, '') +
-        '/success.html?deviceId=' +
-        deviceId
-    );
     return (
       base +
       sep +
       'checkout%5Bcustom%5D%5Bdevice_id%5D=' +
-      encodeURIComponent(deviceId) +
-      '&checkout%5Bcustom%5D%5Bsource%5D=shopradar_extension' +
-      '&checkout%5Bredirect_url%5D=' +
-      websiteUrl
+      encodeURIComponent(deviceId)
     );
   }
 }
@@ -1411,6 +1479,7 @@ async function loadProFlagFromStorage() {
     const stored = await chrome.storage.local.get(STORAGE_IS_PRO_KEY);
     if (stored[STORAGE_IS_PRO_KEY] === true) {
       isProSubscriber = true;
+      updateProStatusBar(true);
     }
   } catch (storageErr) {
     console.warn('[ShopRadar] 读取 Pro 缓存失败:', storageErr);
@@ -1436,11 +1505,7 @@ async function persistProFlag(isPro) {
 async function verifyExportWithServer() {
   try {
     const deviceId = await getOrCreateDeviceId();
-    let accessToken = await getStoredAccessToken();
-    if (!accessToken) {
-      await refreshProStatusWithWebsiteSync({ skipResume: true });
-      accessToken = await getStoredAccessToken();
-    }
+    const accessToken = await getStoredAccessToken();
     if (!accessToken) {
       return false;
     }
@@ -1490,7 +1555,6 @@ async function trySyncDeviceFromOpenWebsiteTabs() {
     tabs = await chrome.tabs.query({
       url: [
         'https://shopradar.uk/*',
-        'https://www.shopradar.uk/*',
         'http://localhost/*',
         'http://127.0.0.1/*',
       ],
@@ -1542,19 +1606,74 @@ async function fetchProStatusPayloadForDevice(deviceId, accessToken) {
   return { response: response, deviceId: deviceId };
 }
 
-async function readProStatusPayload(deviceId, accessToken) {
-  let result = await fetchProStatusPayloadForDevice(deviceId, accessToken);
-  let response = result.response;
-  if (response.status === 401 && accessToken) {
-    await clearStoredAccessToken();
-    result = await fetchProStatusPayloadForDevice(deviceId, '');
-    response = result.response;
+function setClaimProMessage(text, isError) {
+  if (!claimProMsgEl) {
+    return;
   }
-  if (!response.ok) {
-    return { ok: false, response: response, data: null };
+  if (!text) {
+    claimProMsgEl.textContent = '';
+    claimProMsgEl.classList.add('hidden');
+    claimProMsgEl.classList.remove('is-error', 'is-success');
+    return;
   }
-  const data = await response.json();
-  return { ok: true, response: response, data: data };
+  claimProMsgEl.textContent = text;
+  claimProMsgEl.classList.remove('hidden', 'is-error', 'is-success');
+  claimProMsgEl.classList.add(isError ? 'is-error' : 'is-success');
+}
+
+/**
+ * 用付款邮箱将 Pro 绑定到当前 Device ID（重装 / 换设备后恢复）
+ * @param {string} email
+ * @returns {Promise<{ ok: boolean, msg?: string }>}
+ */
+async function claimProWithEmail(email) {
+  const deviceId = await getOrCreateDeviceId();
+  const trimmed = String(email || '').trim();
+  if (!trimmed) {
+    return { ok: false, msg: UI_TEXT.claimProEmptyEmail };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(function () {
+    controller.abort();
+  }, 10000);
+
+  try {
+    const response = await fetch(AUTH_API_CLAIM_PRO, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: deviceId, email: trimmed }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (parseErr) {
+      data = null;
+    }
+
+    if (response.ok && data && data.isPro) {
+      isProSubscriber = true;
+      await persistProFlag(true);
+      await clearPaymentPending();
+      await saveAccessTokenFromPayload(data);
+      hideLimitOverlay();
+      schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
+      return { ok: true, msg: UI_TEXT.claimProSuccess };
+    }
+
+    return {
+      ok: false,
+      msg:
+        (data && data.msg) ||
+        '未找到与该邮箱匹配的 Pro 记录。请确认付款邮箱无误；若刚付款请等待 2 分钟再试。',
+    };
+  } catch (claimErr) {
+    clearTimeout(timeoutId);
+    return { ok: false, msg: UI_TEXT.claimProNetworkError };
+  }
 }
 
 async function applyProStatusPayload(data, options) {
@@ -1564,6 +1683,7 @@ async function applyProStatusPayload(data, options) {
   }
   isProSubscriber = true;
   await persistProFlag(true);
+  updateProStatusBar(true);
   await clearPaymentPending();
   const hadQuotaWall = isQueryLimitLocked;
   hideLimitOverlay();
@@ -1577,56 +1697,81 @@ async function refreshProStatusFromServer(options) {
   const skipResume = Boolean(options && options.skipResume);
 
   try {
+    const hadLocalPro = isProSubscriber;
     let deviceId = await getOrCreateDeviceId();
     let accessToken = await getStoredAccessToken();
-    let status = await readProStatusPayload(deviceId, accessToken);
+    let result = await fetchProStatusPayloadForDevice(deviceId, accessToken);
+    let response = result.response;
 
-    if (!status.ok) {
-      if (status.response && status.response.status >= 500) {
-        console.warn('[ShopRadar] Pro 状态服务异常:', status.response.status);
-      }
-      await loadProFlagFromStorage();
-      return isProSubscriber;
+    if (response.status === 401 && accessToken) {
+      await clearStoredAccessToken();
+      result = await fetchProStatusPayloadForDevice(deviceId, '');
+      response = result.response;
     }
 
-    let data = status.data;
+    if (!response.ok) {
+      if (response.status >= 500) {
+        console.warn('[ShopRadar] Pro 状态服务异常:', response.status);
+        return await isPersistedProSubscriber();
+      }
+      try {
+        const errData = await response.json();
+        await saveAccessTokenFromPayload(errData);
+        if (await applyProStatusPayload(errData, { skipResume: skipResume })) {
+          return true;
+        }
+      } catch (parseErr) {
+        /* ignore */
+      }
+      return await isPersistedProSubscriber();
+    }
+
+    let data = await response.json();
     await saveAccessTokenFromPayload(data);
     if (await applyProStatusPayload(data, { skipResume: skipResume })) {
       return true;
     }
 
-    if (await isPaymentRecentlyPending()) {
-      isProSubscriber = true;
-      return false;
-    }
-
-    const synced = await trySyncDeviceFromOpenWebsiteTabs();
-    if (synced) {
-      deviceId = await getOrCreateDeviceId();
-      accessToken = await getStoredAccessToken();
-      showDeviceIdInPanel(deviceId);
-      status = await readProStatusPayload(deviceId, accessToken);
-      if (status.ok) {
-        data = status.data;
-        await saveAccessTokenFromPayload(data);
-        if (await applyProStatusPayload(data, { skipResume: skipResume })) {
-          return true;
+    if (
+      hadLocalPro ||
+      (await chrome.storage.local.get(STORAGE_IS_PRO_KEY))[STORAGE_IS_PRO_KEY]
+    ) {
+      const synced = await trySyncDeviceFromOpenWebsiteTabs();
+      if (synced) {
+        deviceId = await getOrCreateDeviceId();
+        accessToken = await getStoredAccessToken();
+        showDeviceIdInPanel(deviceId);
+        result = await fetchProStatusPayloadForDevice(deviceId, accessToken);
+        response = result.response;
+        if (response.status === 401 && accessToken) {
+          await clearStoredAccessToken();
+          result = await fetchProStatusPayloadForDevice(deviceId, '');
+          response = result.response;
+        }
+        if (response.ok) {
+          data = await response.json();
+          await saveAccessTokenFromPayload(data);
+          if (await applyProStatusPayload(data, { skipResume: skipResume })) {
+            return true;
+          }
         }
       }
-    }
-
-    await loadProFlagFromStorage();
-    if (await isPersistedProSubscriber()) {
-      isProSubscriber = true;
-      return false;
+      await loadProFlagFromStorage();
+      if (isProSubscriber) {
+        console.warn(
+          '[ShopRadar] 服务端未确认 Pro，保留本地 Pro 标记。请核对 Device ID 是否与付款时一致，或点「刷新 Pro 状态」。'
+        );
+        return true;
+      }
     }
 
     isProSubscriber = false;
     await persistProFlag(false);
+    updateProStatusBar(false);
   } catch (statusError) {
     console.warn('[ShopRadar] 查询 Pro 状态失败:', statusError);
     await loadProFlagFromStorage();
-    return isProSubscriber;
+    return await isPersistedProSubscriber();
   }
   return false;
 }
@@ -1638,22 +1783,15 @@ async function refreshProStatusFromServer(options) {
  */
 async function refreshProStatusWithWebsiteSync(options) {
   const ok = await refreshProStatusFromServer(options);
-  if (ok) {
+  if (ok || (await hasProAccess())) {
     return true;
-  }
-  if (await isPersistedProSubscriber()) {
-    isProSubscriber = true;
-    return true;
-  }
-  if (await isPaymentRecentlyPending()) {
-    isProSubscriber = true;
-    return false;
   }
   const synced = await trySyncDeviceFromOpenWebsiteTabs();
   if (!synced) {
-    return false;
+    return await hasProAccess();
   }
-  return refreshProStatusFromServer(options);
+  const retryOk = await refreshProStatusFromServer(options);
+  return retryOk || (await hasProAccess());
 }
 
 function csvExportCell(value) {
@@ -1832,21 +1970,25 @@ function showExportSuccessFeedback() {
 }
 
 async function handleExportClick() {
-  if (await isPaymentRecentlyPending()) {
-    await pollProActivationAfterCheckout(15000);
+  if (!(await hasProAccess())) {
+    await refreshProStatusWithWebsiteSync({ skipResume: true });
   }
-  await refreshProStatusWithWebsiteSync({ skipResume: true });
-  if (!(await isPersistedProSubscriber())) {
+  if (!(await hasProAccess())) {
     showLimitOverlay(UI_TEXT.limitDescDefault);
     return;
   }
-  isProSubscriber = true;
-  const exportOk = await verifyExportWithServer();
+  let exportOk = await verifyExportWithServer();
   if (!exportOk) {
-    showLimitOverlay(
-      '导出需要有效的 Pro 会话。请点「刷新 Pro 状态」，或确认 Device ID 与付款时一致。'
-    );
-    return;
+    await refreshProStatusWithWebsiteSync({ skipResume: true });
+    exportOk = await verifyExportWithServer();
+  }
+  if (!exportOk) {
+    if (!(await hasProAccess())) {
+      showLimitOverlay(
+        '导出需要有效的 Pro 会话，请确认鉴权服务已启动并已开通 Pro。'
+      );
+      return;
+    }
   }
   if (isProductsLoading) {
     window.alert('数据正在加载中，请稍后...');
@@ -1952,7 +2094,7 @@ function bindRefreshProButton() {
     refreshProBtn.textContent = UI_TEXT.refreshProStatusWorking;
     try {
       const ok = await pollProActivationAfterCheckout(20000);
-      if (ok || isPaidProSubscriber()) {
+      if (ok || (await hasProAccess())) {
         hideLimitOverlay();
         schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
         return;
@@ -1967,6 +2109,41 @@ function bindRefreshProButton() {
     } finally {
       refreshProBtn.disabled = false;
       refreshProBtn.textContent = prevLabel || UI_TEXT.refreshProStatus;
+    }
+  });
+}
+
+function bindClaimProButton() {
+  if (!claimProBtn || !claimProEmailEl) {
+    return;
+  }
+
+  claimProBtn.addEventListener('click', async function () {
+    const prevLabel = claimProBtn.textContent;
+    claimProBtn.disabled = true;
+    claimProEmailEl.disabled = true;
+    claimProBtn.textContent = UI_TEXT.claimProWorking;
+    setClaimProMessage('');
+
+    try {
+      const result = await claimProWithEmail(claimProEmailEl.value);
+      if (result.ok) {
+        setClaimProMessage(result.msg || UI_TEXT.claimProSuccess, false);
+        claimProEmailEl.value = '';
+        return;
+      }
+      setClaimProMessage(result.msg || UI_TEXT.claimProNetworkError, true);
+    } finally {
+      claimProBtn.disabled = false;
+      claimProEmailEl.disabled = false;
+      claimProBtn.textContent = prevLabel || UI_TEXT.claimProBtn;
+    }
+  });
+
+  claimProEmailEl.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      claimProBtn.click();
     }
   });
 }
@@ -1991,6 +2168,10 @@ function showState(state) {
 
   mainContent.classList.toggle('has-products', state === 'success');
 
+  if (state === 'success' || state === 'loading') {
+    setProSummaryOnlyMode(false);
+  }
+
   statusIndicator.classList.remove('success', 'fail');
   if (state === 'success') {
     statusIndicator.classList.add('success');
@@ -2002,6 +2183,8 @@ function showState(state) {
   } else {
     statusIndicator.title = UI_TEXT.statusDetecting;
   }
+
+  setExportButtonVisible(state === 'success');
 }
 
 /**
@@ -2431,10 +2614,6 @@ function isNonShopBrowseContext(tab) {
  * 支付完成后在 Lemon 页轮询本机 Pro 状态（等待 Webhook 写入）
  */
 async function pollProActivationAfterPayment(runId, maxWaitMs) {
-  if (isProSubscriber) {
-    return true;
-  }
-
   const deadline = Date.now() + (maxWaitMs || 20000);
   const prevLoadingText = loadingTextEl ? loadingTextEl.textContent : '';
 
@@ -2447,8 +2626,9 @@ async function pollProActivationAfterPayment(runId, maxWaitMs) {
       loadingTextEl.textContent = UI_TEXT.paymentConfirming;
     }
 
-    const ok = await refreshProStatusFromServer({ skipResume: true });
-    if (ok || isProSubscriber) {
+    const ok = await refreshProStatusWithWebsiteSync({ skipResume: true });
+    if (ok && (await hasProAccess())) {
+      await clearPaymentPending();
       if (typeof ShopRadarLemonReturn !== 'undefined') {
         await ShopRadarLemonReturn.returnToShopAfterPayment();
       }
@@ -2465,36 +2645,47 @@ async function pollProActivationAfterPayment(runId, maxWaitMs) {
   if (loadingTextEl) {
     loadingTextEl.textContent = prevLoadingText || UI_TEXT.loading;
   }
-  return isProSubscriber;
+  return await hasProAccess();
 }
 
 /**
  * 非店铺页（含 Lemon 支付成功页）的提示，避免对支付页做店铺检测一直转圈
  */
-function showNonShopBrowseState(domain) {
+async function showNonShopBrowseState(domain) {
   clearFailStateRetries();
   isProductsLoading = false;
   setProductsLoading(false);
   rawProductsForExport = null;
-  showState('fail');
 
-  if (isProSubscriber) {
+  const confirmedPro = await hasProAccess();
+  updateProStatusBar(confirmedPro);
+
+  if (confirmedPro) {
+    showState('fail');
+    setProSummaryOnlyMode(true);
     if (failEmojiEl) {
-      failEmojiEl.textContent = '\u2705';
+      failEmojiEl.textContent = '';
     }
     if (failTitleEl) {
-      failTitleEl.textContent = UI_TEXT.proReadySwitchShop;
+      failTitleEl.textContent = '';
     }
     return;
   }
+
+  setProSummaryOnlyMode(false);
+  showState('fail');
 
   if (failEmojiEl) {
     failEmojiEl.textContent = UI_TEXT.failEmoji;
   }
   if (failTitleEl) {
-    failTitleEl.textContent = isLemonSqueezyHost(domain)
-      ? UI_TEXT.paymentPendingSwitchShop
-      : '请打开 Shopify / SFCC 店铺页面';
+    if (isLemonSqueezyHost(domain) && (await isPaymentRecentlyPending())) {
+      failTitleEl.textContent = UI_TEXT.paymentPendingSwitchShop;
+    } else {
+      failTitleEl.textContent = isLemonSqueezyHost(domain)
+        ? UI_TEXT.paymentPendingSwitchShop
+        : '请打开 Shopify / SFCC 店铺页面';
+    }
   }
 }
 
@@ -3205,7 +3396,7 @@ async function finishSupportedStoreInit(domain, tabId, storeType, runId) {
   }
 
   if (cache?.products?.length) {
-    if (!isPaidProSubscriber()) {
+    if (!(await hasProAccess())) {
       const allowed = await ensureQueryAllowed(domain);
       if (runId !== initRunId) {
         return false;
@@ -4455,7 +4646,7 @@ async function openShopFromCacheEntry(domain, tab, runId, productCache, options)
   }
 
   const allowQuotaCheck = !options || options.allowQuotaCheck !== false;
-  if (allowQuotaCheck && !isPaidProSubscriber()) {
+  if (allowQuotaCheck && !(await hasProAccess())) {
     const allowed = await ensureQueryAllowed(domain);
     if (runId !== initRunId) {
       return false;
@@ -4902,7 +5093,7 @@ async function init(options) {
     if (runId !== initRunId) {
       return;
     }
-    showNonShopBrowseState(domain);
+    await showNonShopBrowseState(domain);
     return;
   }
 
@@ -5052,7 +5243,7 @@ document.addEventListener('DOMContentLoaded', () => {
   bindExportButton();
   bindUnlockProButton();
   bindRefreshProButton();
-  bindOpenDashboardLink();
+  bindClaimProButton();
   bindGrantAccessButton();
   bindDeviceIdBar();
   bindShopCacheListener();
@@ -5073,8 +5264,8 @@ function handlePopupRuntimeMessage(message, sender, sendResponse) {
   }
   if (message.type === 'SR_PRO_ACTIVATED') {
     return refreshProStatusWithWebsiteSync({ skipResume: true })
-      .then(function (ok) {
-        if (ok || isProSubscriber) {
+      .then(async function (ok) {
+        if (ok || (await hasProAccess())) {
           hideLimitOverlay();
           schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
         }
@@ -5089,23 +5280,11 @@ function handlePopupRuntimeMessage(message, sender, sendResponse) {
       showDeviceIdInPanel(String(message.deviceId));
     }
     return refreshProStatusWithWebsiteSync({ skipResume: true })
-      .then(function (ok) {
-        if (ok || isProSubscriber) {
+      .then(async function (ok) {
+        if (ok || (await hasProAccess())) {
           hideLimitOverlay();
-        } else {
-          return isPaymentRecentlyPending().then(function (pending) {
-            if (pending) {
-              return loadProFlagFromStorage().then(function () {
-                if (isProSubscriber) {
-                  hideLimitOverlay();
-                }
-              });
-            }
-          });
         }
-      })
-      .then(function () {
-        if (!initInProgress && (isProSubscriber || isPaidProSubscriber())) {
+        if (!initInProgress && (await hasProAccess())) {
           schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
         }
         return { status: 'ok' };

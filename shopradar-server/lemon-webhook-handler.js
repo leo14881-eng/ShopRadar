@@ -209,9 +209,12 @@ async function activateProForUser(db, dbGet, dbRun, identity, expiresAtIso, toda
     await dbRun(
       db,
       `UPDATE users
-       SET is_pro = 1, pro_expires_at = ?, account_email = COALESCE(?, account_email)
+       SET is_pro = 1, pro_expires_at = ?, account_email = CASE
+         WHEN ? IS NOT NULL AND ? != '' THEN ?
+         ELSE account_email
+       END
        WHERE device_id = ?`,
-      [expiresAt, email || null, targetDeviceId]
+      [expiresAt, email || null, email || null, email || null, targetDeviceId]
     );
   } else {
     await dbRun(
@@ -286,6 +289,10 @@ async function handleLemonWebhookEvent(db, body, helpers) {
   const today = helpers.getTodayDateString();
 
   if (LEMON_PRO_EVENTS.has(eventName)) {
+    if (helpers.logProWebhookIdentity) {
+      await helpers.logProWebhookIdentity(db, helpers.dbRun, eventName, identity);
+    }
+
     const expiresAt =
       extractProExpiresAt(body) ||
       (eventName === 'order_created' ? defaultProExpiresAtIso() : null);
@@ -298,6 +305,16 @@ async function handleLemonWebhookEvent(db, body, helpers) {
       expiresAt,
       today
     );
+
+    if (result.handled && identity.email && helpers.saveProEmailRegistry) {
+      await helpers.saveProEmailRegistry(
+        db,
+        helpers.dbRun,
+        identity.email,
+        result.deviceId,
+        result.proExpiresAt
+      );
+    }
 
     if (
       !result.handled &&

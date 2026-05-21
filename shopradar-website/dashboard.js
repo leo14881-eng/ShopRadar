@@ -24,6 +24,7 @@
   var STORAGE_IS_PRO = 'sr_is_pro';
 
   var isPro = false;
+  var lastProExpiresAt = '';
   var pollTimer = null;
 
   function getI18n() {
@@ -102,7 +103,7 @@
       /* ignore */
     }
 
-    if (opts.allowGenerate === false) {
+    if (opts.deferCreate) {
       return '';
     }
 
@@ -220,6 +221,104 @@
     }
   }
 
+  function setClaimProMessage(text, isError) {
+    var msgEl = $('claim-pro-msg');
+    if (!msgEl) {
+      return;
+    }
+    if (!text) {
+      msgEl.textContent = '';
+      msgEl.classList.add('hidden');
+      msgEl.classList.remove('text-red-400', 'text-emerald-400');
+      return;
+    }
+    msgEl.textContent = text;
+    msgEl.classList.remove('hidden', 'text-red-400', 'text-emerald-400');
+    msgEl.classList.add(isError ? 'text-red-400' : 'text-emerald-400');
+  }
+
+  function claimProWithEmail(deviceId, email) {
+    var trimmed = String(email || '').trim();
+    if (!trimmed) {
+      return Promise.resolve({ ok: false, msg: t('dashboard.claimProEmptyEmail') });
+    }
+    return fetch(API_BASE + '/api/claim-pro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: deviceId, email: trimmed }),
+    })
+      .then(function (response) {
+        return response
+          .json()
+          .catch(function () {
+            return { ok: false, isPro: false };
+          })
+          .then(function (data) {
+            if (response.ok && data && data.isPro) {
+              saveAccessTokenFromPayload(data);
+              persistProFlag(true);
+              applyProState(true, data.proExpiresAt || '');
+              setPaywallLocked(false);
+              loadTrending(deviceId, true);
+              return { ok: true, msg: t('dashboard.claimProSuccess') };
+            }
+            return {
+              ok: false,
+              msg:
+                (data && data.msg) ||
+                'No Pro record found for this email. Check the address or wait 2 minutes after payment.',
+            };
+          });
+      })
+      .catch(function () {
+        return { ok: false, msg: t('dashboard.claimProNetworkError') };
+      });
+  }
+
+  var claimProFormBound = false;
+
+  function bindClaimProForm() {
+    if (claimProFormBound) {
+      return;
+    }
+    var btn = $('claim-pro-btn');
+    var input = $('claim-pro-email');
+    if (!btn || !input) {
+      return;
+    }
+    claimProFormBound = true;
+
+    btn.addEventListener('click', function () {
+      var deviceId = getOrCreateDeviceId();
+      var labelEl = btn.querySelector('[data-i18n]') || btn;
+      var prevText = labelEl.textContent;
+      btn.disabled = true;
+      input.disabled = true;
+      labelEl.textContent = t('dashboard.claimProWorking');
+      setClaimProMessage('');
+
+      claimProWithEmail(deviceId, input.value).then(function (result) {
+        if (result.ok) {
+          setClaimProMessage(result.msg, false);
+          input.value = '';
+        } else {
+          setClaimProMessage(result.msg, true);
+        }
+      }).finally(function () {
+        btn.disabled = false;
+        input.disabled = false;
+        labelEl.textContent = prevText;
+      });
+    });
+
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        btn.click();
+      }
+    });
+  }
+
   function wireChromeStoreLinks() {
     var url = String(CFG.chromeStoreUrl || '').trim();
     if (!url || url.indexOf('PLACEHOLDER') !== -1) {
@@ -229,37 +328,6 @@
     for (var i = 0; i < links.length; i++) {
       links[i].setAttribute('href', url);
     }
-  }
-
-  function showDeviceIdBar(deviceId) {
-    var textEl = $('deviceIdText');
-    if (textEl) {
-      textEl.textContent = deviceId || '—';
-    }
-  }
-
-  function bindDeviceIdBar() {
-    var bar = $('device-id-bar');
-    if (!bar) {
-      return;
-    }
-    bar.addEventListener('click', function () {
-      var id = getOrCreateDeviceId();
-      if (!id || !navigator.clipboard) {
-        return;
-      }
-      navigator.clipboard.writeText(id).then(function () {
-        var textEl = $('deviceIdText');
-        if (!textEl) {
-          return;
-        }
-        var prev = textEl.textContent;
-        textEl.textContent = t('misc.copied');
-        setTimeout(function () {
-          textEl.textContent = prev;
-        }, 1500);
-      });
-    });
   }
 
   function updateProBadge(pro) {
@@ -299,7 +367,6 @@
   function setPaywallLocked(locked) {
     var overlay = $('paywall-overlay');
     var blurEl = $('trending-table-blur');
-    var unlockedBanner = $('pro-unlocked-banner');
 
     if (overlay) {
       overlay.classList.toggle('hidden', !locked);
@@ -307,13 +374,13 @@
     if (blurEl) {
       blurEl.classList.toggle('paywall-blur', locked);
     }
-    if (unlockedBanner) {
-      unlockedBanner.classList.toggle('hidden', locked);
-    }
   }
 
-  function applyProState(pro) {
+  function applyProState(pro, proExpiresAt) {
     isPro = pro;
+    if (proExpiresAt) {
+      lastProExpiresAt = proExpiresAt;
+    }
     persistProFlag(pro);
     updateProBadge(pro);
     updateNavUpgrade(pro);
@@ -531,45 +598,60 @@
     });
   }
 
+  function parseProStatusPayload(data) {
+    return {
+      isPro: Boolean(data && data.isPro),
+      proExpiresAt: data && data.proExpiresAt ? String(data.proExpiresAt) : '',
+    };
+  }
+
+  function fetchProStatusOnce(deviceId, token) {
+    var url = API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId);
+    if (token) {
+      url += '&accessToken=' + encodeURIComponent(token);
+    }
+    return fetch(url);
+  }
+
   function fetchProStatus(deviceId) {
-    function request(withToken) {
-      var url = API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId);
-      var token = withToken ? getStoredAccessToken() : '';
-      if (token) {
-        url += '&accessToken=' + encodeURIComponent(token);
-      }
-      return fetch(url).then(function (response) {
-        if (response.status === 401 && withToken) {
+    var token = getStoredAccessToken();
+    return fetchProStatusOnce(deviceId, token)
+      .then(function (response) {
+        if (response.status === 401 && token) {
           try {
             sessionStorage.removeItem(STORAGE_ACCESS_TOKEN);
             sessionStorage.removeItem(STORAGE_TOKEN_EXPIRES);
           } catch (e) {
             /* ignore */
           }
-          return request(false);
+          return fetchProStatusOnce(deviceId, '');
         }
-        if (!response.ok) {
-          return { isPro: false };
-        }
-        return response.json();
-      });
-    }
-
-    return request(true)
-      .then(function (data) {
-        saveAccessTokenFromPayload(data);
-        return Boolean(data && data.isPro);
+        return response;
+      })
+      .then(function (response) {
+        return response
+          .json()
+          .catch(function () {
+            return { isPro: false };
+          })
+          .then(function (data) {
+            saveAccessTokenFromPayload(data);
+            return parseProStatusPayload(data);
+          });
       })
       .catch(function () {
-        return loadProFlagFromStorage();
+        return {
+          isPro: loadProFlagFromStorage(),
+          proExpiresAt: lastProExpiresAt,
+        };
       });
   }
 
   function refreshProStatus(deviceId, options) {
     var opts = options || {};
-    return fetchProStatus(deviceId).then(function (pro) {
-      if (pro) {
-        applyProState(true);
+    return fetchProStatus(deviceId).then(function (status) {
+      if (status.isPro) {
+        applyProState(true, status.proExpiresAt);
         return true;
       }
       if (opts.preserveOptimistic && loadProFlagFromStorage()) {
@@ -579,7 +661,7 @@
         setPaywallLocked(false);
         return false;
       }
-      applyProState(false);
+      applyProState(false, status.proExpiresAt);
       return false;
     });
   }
@@ -619,27 +701,18 @@
     }
 
     var deadline = Date.now() + 28000;
-    var banner = $('payment-polling-banner');
-
-    if (banner) {
-      banner.classList.remove('hidden');
-    }
 
     function tick() {
       if (Date.now() >= deadline) {
-        if (banner) {
-          banner.classList.add('hidden');
-        }
-        refreshProStatus(deviceId).catch(function () {});
+        refreshProStatus(deviceId, {
+          preserveOptimistic: loadProFlagFromStorage() || shouldPollAfterPayment(),
+        }).catch(function () {});
         return;
       }
 
-      fetchProStatus(deviceId).then(function (pro) {
-        if (pro) {
-          applyProState(true);
-          if (banner) {
-            banner.classList.add('hidden');
-          }
+      fetchProStatus(deviceId).then(function (status) {
+        if (status.isPro) {
+          applyProState(true, status.proExpiresAt);
           var dashboard = $('dashboard');
           if (dashboard) {
             dashboard.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -729,16 +802,12 @@
   }
 
   function runDashboardInit() {
-    var deviceId = getOrCreateDeviceId({ allowGenerate: false });
+    var deviceId = getOrCreateDeviceId({ deferCreate: true });
     if (!deviceId) {
-      deviceId = readQueryDeviceId();
+      deviceId = getOrCreateDeviceId();
     }
-    if (!deviceId) {
-      deviceId = getOrCreateDeviceId({ allowGenerate: true });
-    }
-    showDeviceIdBar(deviceId);
-    bindDeviceIdBar();
     wireUpgradeButtons(deviceId);
+    bindClaimProForm();
     wireChromeStoreLinks();
 
     function onDeviceResynced(event) {
@@ -748,10 +817,9 @@
         return;
       }
       deviceId = syncedId;
-      showDeviceIdBar(deviceId);
       wireUpgradeButtons(deviceId);
       if (detail.isPro) {
-        applyProState(true);
+        applyProState(true, detail.proExpiresAt || lastProExpiresAt);
       } else {
         refreshProStatus(deviceId).catch(function () {});
       }
@@ -771,7 +839,7 @@
     var optimisticPro = loadProFlagFromStorage();
 
     if (optimisticPro || paymentPending) {
-      applyProState(true);
+      applyProState(true, lastProExpiresAt);
     } else {
       setPaywallLocked(true);
     }

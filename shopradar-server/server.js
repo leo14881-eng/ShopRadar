@@ -33,7 +33,10 @@ const {
 const { handleLemonWebhookEvent, activateProForUser } = require('./lemon-webhook-handler');
 const {
   migratePendingProClaimsTable,
+  migrateProEmailRegistryTable,
   savePendingProClaim,
+  saveProEmailRegistry,
+  logProWebhookIdentity,
   claimProByEmail,
 } = require('./pro-claim');
 const { mountV1Routes, V1_WEBHOOK_PATH } = require('./routes-v1');
@@ -44,7 +47,9 @@ const LEMON_WEBHOOK_PATHS = new Set([LEMON_WEBHOOK_PATH, V1_WEBHOOK_PATH]);
 
 const PORT = Number(process.env.PORT) || 3000;
 const FREE_DAILY_LIMIT = 3;
-const DB_PATH = path.join(__dirname, 'database.sqlite');
+const DB_PATH = process.env.SHOPRADAR_DB_PATH
+  ? path.resolve(process.env.SHOPRADAR_DB_PATH)
+  : path.join(__dirname, 'database.sqlite');
 const WHITELIST_PATH = path.join(__dirname, 'whitelist.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const WEBSITE_URL = String(process.env.SHOPRADAR_WEBSITE_URL || 'https://shopradar.uk').replace(
@@ -317,6 +322,8 @@ async function handleLemonSqueezyWebhook(db, body) {
     dbRun: dbRun,
     getTodayDateString: getTodayDateString,
     savePendingProClaim: savePendingProClaim,
+    saveProEmailRegistry: saveProEmailRegistry,
+    logProWebhookIdentity: logProWebhookIdentity,
   });
 }
 
@@ -361,6 +368,9 @@ function initDatabase() {
                   return migratePendingProClaimsTable(db, dbRun);
                 })
                 .then(function () {
+                  return migrateProEmailRegistryTable(db, dbRun);
+                })
+                .then(function () {
                   return migrateTrendingTables(db);
                 })
                 .then(function () {
@@ -382,6 +392,9 @@ function initDatabase() {
                 migrateUsersTable(db)
                   .then(function () {
                     return migratePendingProClaimsTable(db, dbRun);
+                  })
+                  .then(function () {
+                    return migrateProEmailRegistryTable(db, dbRun);
                   })
                   .then(function () {
                     return migrateTrendingTables(db);
@@ -632,14 +645,10 @@ function startServer(db) {
     }
 
     const accessToken = extractAccessTokenFromRequest(req);
-    let tokenValid = null;
+    let tokenValid;
     if (accessToken) {
       const check = verifyAccessToken(accessToken, deviceId);
-      if (check.valid) {
-        tokenValid = true;
-      } else {
-        tokenValid = false;
-      }
+      tokenValid = check.valid;
     }
 
     dbGet(
@@ -650,8 +659,11 @@ function startServer(db) {
       .then(function (row) {
         const isPro = isProRow(row);
         const payload = { isPro: isPro, deviceId: deviceId };
-        if (tokenValid != null) {
-          payload.tokenValid = tokenValid;
+        if (row && row.pro_expires_at) {
+          payload.proExpiresAt = row.pro_expires_at;
+        }
+        if (accessToken) {
+          payload.tokenValid = tokenValid === true;
         }
         if (isPro) {
           const enriched = attachAccessTokenToResult(
@@ -693,7 +705,8 @@ function startServer(db) {
         activateProForUser,
         deviceId,
         email,
-        getTodayDateString()
+        getTodayDateString(),
+        isProRow
       );
     })
       .then(function (result) {

@@ -40,13 +40,13 @@
     {
       "matches": [
         "https://shopradar.uk/*",
-        "https://www.shopradar.uk/*",
+    "https://www.shopradar.uk/*",
         "http://localhost/*",
         "http://127.0.0.1/*"
       ],
       "js": [
         "extension-config.js",
-        "local-dev-config.js",
+        "extension-env.js",
         "extension-guard.js",
         "website-device-sync.js"
       ],

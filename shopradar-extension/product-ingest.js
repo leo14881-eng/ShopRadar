@@ -18,6 +18,9 @@ var ShopRadarIngest = (function () {
   var MAX_PRODUCTS = 50;
 
   function getApiBase() {
+    if (typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getApiBase) {
+      return ShopRadarEnv.getApiBase();
+    }
     if (
       typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
       SHOPRADAR_EXTENSION_CONFIG.apiBase

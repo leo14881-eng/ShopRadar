@@ -2,29 +2,141 @@
 
 /* ----- extension-config.js ----- */
 /**
- * ShopRadar 扩展发布配置（打包进 Chrome 商店）
- * 本地调试可复制 extension-config.dev.example.js 为 extension-config.local.js 并改 popup.html 引入
+ * ShopRadar 扩展默认配置（线上地址）
+ * 实际运行环境由 extension-env.js 自动判定：解压本地开发 → localhost，商店安装 → 线上。
  */
 var SHOPRADAR_EXTENSION_CONFIG = {
+  env: 'production',
   apiBase: 'https://api.shopradar.uk',
   websiteUrl: 'https://shopradar.uk',
   debug: false,
 };
 
-/* ----- local-dev-config.js ----- */
+/* ----- extension-env.js ----- */
 'use strict';
-/** 本地 API — npm run dev:prod 可恢复线上 */
-(function shopRadarLocalDevConfig(global) {
+
+/**
+ * 扩展运行环境：自动选择 API / 官网地址
+ *
+ * - 开发者「加载已解压的扩展程序」→ 本地 http://localhost:3000
+ * - Chrome Web Store 正式安装（含 update_url）→ 线上 https://api.shopradar.uk
+ * - 官网 content script 在 localhost 打开 → 本地 API
+ *
+ * 商店打包使用 extension-env.production.js（见 scripts/package-chrome-store.js）
+ */
+(function shopRadarExtensionEnv(global) {
   if (!global) {
     return;
   }
-  global.__SHOPRADAR_LOCAL_DEV__ = true;
-  global.SHOPRADAR_EXTENSION_CONFIG = {
+
+  var PRODUCTION = {
+    env: 'production',
+    apiBase: 'https://api.shopradar.uk',
+    websiteUrl: 'https://shopradar.uk',
+    debug: false,
+  };
+
+  var DEVELOPMENT = {
+    env: 'development',
     apiBase: 'http://localhost:3000',
     websiteUrl: 'http://localhost:8080',
     debug: true,
   };
-})(typeof globalThis !== 'undefined' ? globalThis : typeof self !== 'undefined' ? self : this);
+
+  function isLocalWebsiteHost() {
+    try {
+      if (typeof location !== 'undefined' && location.hostname) {
+        var host = String(location.hostname).toLowerCase();
+        return (
+          host === 'localhost' ||
+          host === '127.0.0.1' ||
+          host === '[::1]' ||
+          host.endsWith('.localhost')
+        );
+      }
+    } catch (hostErr) {
+      return false;
+    }
+    return false;
+  }
+
+  function isUnpackedExtensionLoad() {
+    try {
+      if (
+        typeof chrome !== 'undefined' &&
+        chrome.runtime &&
+        chrome.runtime.getManifest
+      ) {
+        var manifest = chrome.runtime.getManifest();
+        if (manifest && manifest.shopradar_env === 'production') {
+          return false;
+        }
+        // Web Store 安装后 Chrome 会注入 update_url；本地解压加载没有
+        if (!manifest.update_url) {
+          return true;
+        }
+      }
+    } catch (manifestErr) {
+      return false;
+    }
+    return false;
+  }
+
+  function resolveEnvMode() {
+    var base =
+      typeof global.SHOPRADAR_EXTENSION_CONFIG !== 'undefined'
+        ? global.SHOPRADAR_EXTENSION_CONFIG
+        : {};
+    if (base.env === 'production') {
+      return 'production';
+    }
+    if (base.env === 'development') {
+      return 'development';
+    }
+    if (isUnpackedExtensionLoad() || isLocalWebsiteHost()) {
+      return 'development';
+    }
+    return 'production';
+  }
+
+  var mode = resolveEnvMode();
+  var resolved = Object.assign(
+    {},
+    mode === 'development' ? DEVELOPMENT : PRODUCTION
+  );
+
+  global.SHOPRADAR_EXTENSION_CONFIG = resolved;
+
+  global.ShopRadarEnv = {
+    getMode: function () {
+      return mode;
+    },
+    isDevelopment: function () {
+      return mode === 'development';
+    },
+    isProduction: function () {
+      return mode === 'production';
+    },
+    getApiBase: function () {
+      return String(resolved.apiBase || PRODUCTION.apiBase).replace(/\/$/, '');
+    },
+    getWebsiteUrl: function () {
+      return String(resolved.websiteUrl || PRODUCTION.websiteUrl).replace(
+        /\/$/,
+        ''
+      );
+    },
+    getConfig: function () {
+      return Object.assign({}, resolved);
+    },
+  };
+})(
+  typeof globalThis !== 'undefined'
+    ? globalThis
+    : typeof self !== 'undefined'
+      ? self
+      : this
+);
 
 /* ----- extension-guard.js ----- */
 /**
@@ -1730,6 +1842,9 @@ var ShopRadarIngest = (function () {
   var MAX_PRODUCTS = 50;
 
   function getApiBase() {
+    if (typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getApiBase) {
+      return ShopRadarEnv.getApiBase();
+    }
     if (
       typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
       SHOPRADAR_EXTENSION_CONFIG.apiBase
@@ -1910,6 +2025,10 @@ var ShopRadarLemonReturn = (function () {
   var RETURN_TAB_KEY = 'sr_lemon_return_tab_id';
   var RETURN_URL_KEY = 'sr_lemon_return_url';
   var CHECKOUT_TAB_KEY = 'sr_lemon_checkout_tab_id';
+  var STORAGE_DEVICE = 'sr_device_id';
+  var STORAGE_PRO = 'sr_is_pro';
+  var STORAGE_TOKEN = 'sr_access_token';
+  var STORAGE_TOKEN_EXP = 'sr_token_expires_at';
 
   var backgroundPollTimer = null;
   var backgroundPollActive = false;
@@ -1960,6 +2079,9 @@ var ShopRadarLemonReturn = (function () {
   }
 
   function getApiBase() {
+    if (typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getApiBase) {
+      return ShopRadarEnv.getApiBase();
+    }
     if (
       typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
       SHOPRADAR_EXTENSION_CONFIG.apiBase
@@ -1973,6 +2095,132 @@ var ShopRadarLemonReturn = (function () {
     return new Promise(function (resolve) {
       setTimeout(resolve, ms);
     });
+  }
+
+  function tokenExpiresAt(payload) {
+    if (!payload) {
+      return 0;
+    }
+    if (payload.tokenExpiresAt != null) {
+      return Number(payload.tokenExpiresAt) || 0;
+    }
+    if (payload.tokenExpiresIn != null) {
+      return Date.now() + Number(payload.tokenExpiresIn) * 1000;
+    }
+    return 0;
+  }
+
+  async function saveAccessTokenFromPayload(payload) {
+    if (!payload || !payload.accessToken || !chrome.storage || !chrome.storage.session) {
+      return;
+    }
+    var exp = tokenExpiresAt(payload);
+    try {
+      var patch = {};
+      patch[STORAGE_TOKEN] = String(payload.accessToken);
+      patch[STORAGE_TOKEN_EXP] = exp || 0;
+      await chrome.storage.session.set(patch);
+    } catch (tokenErr) {
+      /* ignore */
+    }
+  }
+
+  async function saveProFromPayload(payload) {
+    if (!payload || !payload.isPro || !chrome.storage || !chrome.storage.local) {
+      return;
+    }
+    try {
+      await chrome.storage.local.set({ [STORAGE_PRO]: true });
+    } catch (persistErr) {
+      /* ignore */
+    }
+    await saveAccessTokenFromPayload(payload);
+  }
+
+  async function getStoredAccessToken() {
+    if (!chrome.storage || !chrome.storage.session) {
+      return '';
+    }
+    try {
+      var stored = await chrome.storage.session.get([STORAGE_TOKEN, STORAGE_TOKEN_EXP]);
+      var token = stored[STORAGE_TOKEN];
+      var expiresAt = Number(stored[STORAGE_TOKEN_EXP] || 0);
+      if (!token) {
+        return '';
+      }
+      if (expiresAt && expiresAt < Date.now()) {
+        await chrome.storage.session.remove([STORAGE_TOKEN, STORAGE_TOKEN_EXP]);
+        return '';
+      }
+      return String(token);
+    } catch (readErr) {
+      return '';
+    }
+  }
+
+  async function clearStoredAccessToken() {
+    if (!chrome.storage || !chrome.storage.session) {
+      return;
+    }
+    try {
+      await chrome.storage.session.remove([STORAGE_TOKEN, STORAGE_TOKEN_EXP]);
+    } catch (clearErr) {
+      /* ignore */
+    }
+  }
+
+  async function fetchProStatusOnce(deviceId, accessToken) {
+    var url =
+      getApiBase() +
+      '/api/pro-status?deviceId=' +
+      encodeURIComponent(String(deviceId));
+    if (accessToken) {
+      url += '&accessToken=' + encodeURIComponent(String(accessToken));
+    }
+    return fetch(url);
+  }
+
+  async function parseProStatusResponse(response) {
+    var data = null;
+    try {
+      data = await response.json();
+    } catch (parseErr) {
+      return false;
+    }
+    if (data && data.isPro) {
+      await saveProFromPayload(data);
+      return true;
+    }
+    return false;
+  }
+
+  async function fetchProStatusFromServer() {
+    if (!chrome.storage || !chrome.storage.local) {
+      return false;
+    }
+    try {
+      var stored = await chrome.storage.local.get([STORAGE_DEVICE]);
+      var deviceId = stored[STORAGE_DEVICE];
+      if (!deviceId) {
+        return false;
+      }
+
+      var accessToken = await getStoredAccessToken();
+      var response = await fetchProStatusOnce(deviceId, accessToken);
+
+      if (response.status === 401 && accessToken) {
+        await clearStoredAccessToken();
+        response = await fetchProStatusOnce(deviceId, '');
+      }
+
+      if (response.ok) {
+        return await parseProStatusResponse(response);
+      }
+
+      return await parseProStatusResponse(response);
+    } catch (err) {
+      return false;
+    }
   }
 
   async function saveReturnContext(tabId, url) {
@@ -2012,43 +2260,6 @@ var ShopRadarLemonReturn = (function () {
       ]);
     } catch (err) {
       /* ignore */
-    }
-  }
-
-  async function fetchProStatusFromServer() {
-    if (!chrome.storage || !chrome.storage.local) {
-      return false;
-    }
-    try {
-      var stored = await chrome.storage.local.get(['sr_device_id', 'sr_access_token']);
-      var deviceId = stored.sr_device_id;
-      if (!deviceId) {
-        return false;
-      }
-      var url =
-        getApiBase() +
-        '/api/pro-status?deviceId=' +
-        encodeURIComponent(String(deviceId));
-      if (stored.sr_access_token) {
-        url +=
-          '&accessToken=' + encodeURIComponent(String(stored.sr_access_token));
-      }
-      var response = await fetch(url);
-      if (!response.ok) {
-        return false;
-      }
-      var data = await response.json();
-      var isPro = Boolean(data && data.isPro);
-      if (isPro && chrome.storage && chrome.storage.local) {
-        try {
-          await chrome.storage.local.set({ sr_is_pro: true });
-        } catch (persistErr) {
-          /* ignore */
-        }
-      }
-      return isPro;
-    } catch (err) {
-      return false;
     }
   }
 
@@ -2161,7 +2372,7 @@ var ShopRadarLemonReturn = (function () {
       return;
     }
     backgroundPollActive = true;
-    var deadline = Date.now() + 26000;
+    var deadline = Date.now() + 90000;
     try {
       while (Date.now() < deadline) {
         if (await fetchProStatusFromServer()) {
@@ -2194,7 +2405,7 @@ var ShopRadarLemonReturn = (function () {
           if (!isCheckoutTab && !isLemonSuccessUrl(url)) {
             return;
           }
-          if (isLemonSuccessUrl(url) || changeInfo.status === 'complete') {
+          if (isLemonSuccessUrl(url)) {
             scheduleBackgroundProPoll();
           }
         })

@@ -5,6 +5,7 @@
   "scripts": {
     "start": "npm run start --prefix shopradar-server",
     "server": "npm run start --prefix shopradar-server",
+    "website": "npm run dev --prefix shopradar-website",
     "ngrok": "npm run ngrok --prefix shopradar-server",
     "tunnel": "npm run tunnel --prefix shopradar-server",
     "build:sw": "npm run build:sw --prefix shopradar-extension",

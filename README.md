@@ -12,6 +12,17 @@
 2. 「加载已解压的扩展程序」→ 选择 **`shopradar-extension/`** 文件夹（含 `manifest.json`）
 3. 修改后台源文件后运行 `npm run build:sw`，再在扩展页点击重新加载
 
+**环境自动切换（无需手动改配置）：**
+
+| 场景 | API 地址 |
+|------|----------|
+| 解压加载扩展（本地开发） | `http://localhost:3000` |
+| Chrome Web Store 安装 | `https://api.shopradar.uk` |
+| 官网 `localhost:8080` | `http://localhost:3000` |
+| 官网 `shopradar.uk` | `https://api.shopradar.uk` |
+
+本地开发时侧边栏底部会显示黄色 `API: http://localhost:3000` 提示。
+
 ## 本地后端
 
 ```bash
@@ -20,7 +31,7 @@ npm install
 npm start
 ```
 
-默认 `http://localhost:3000`。生产 API：`https://api.shopradar.uk`（见 `shopradar-extension/extension-config.js`）。
+默认 `http://localhost:3000`。扩展与官网会根据运行环境**自动**选择 API，见上表；实现见 `shopradar-extension/extension-env.js` 与 `shopradar-website/website-config.js`。
 
 **本地密钥** — 在 `shopradar-server/` 下（已 gitignore）：
 

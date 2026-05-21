@@ -4,8 +4,6 @@
   "description": "ShopRadar Chrome extension",
   "scripts": {
     "build:sw": "node scripts/build-sw-bundle.js",
-    "dev:local": "node scripts/toggle-local-config.js local",
-    "dev:prod": "node scripts/toggle-local-config.js prod",
     "dev": "node scripts/dev-watch.js",
     "verify": "node scripts/verify-extension-folder.js",
     "check": "node scripts/build-sw-bundle.js && node scripts/validate-extension.js && node scripts/verify-extension-folder.js",

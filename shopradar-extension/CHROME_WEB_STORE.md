@@ -29,10 +29,12 @@
 
 ## 二、生产 API 配置（已完成）
 
-- `extension-config.js`：`apiBase: 'https://api.shopradar.uk'`
-- `manifest.json`：`host_permissions` 含 `https://api.shopradar.uk/*`、`https://*.myshopify.com/*`；自定义域名通过 `optional_host_permissions`
+- `extension-env.js`：解压本地开发 → `http://localhost:3000`；Web Store 安装 → `https://api.shopradar.uk`
+- `extension-config.js`：线上默认地址
+- `npm run package:store` 会打入 `extension-env.production.js`，确保商店包**仅连线上**
+- `manifest.json`：`host_permissions` 含 `https://api.shopradar.uk/*`、`http://localhost:3000/*` 等
 
-本地调试：在 **`shopradar-extension/`** 下复制 `extension-config.dev.example.js` 为 `extension-config.local.js`，`debug: true`，`apiBase: http://localhost:3000`，并在 `popup.html` 临时改为引入 `extension-config.local.js`（**不要打进商店 zip**）。
+本地调试：**无需改配置**。用 `chrome://extensions` →「加载已解压的扩展程序」选 `shopradar-extension/` 即可自动连本地 API；侧边栏底部会显示 `API: http://localhost:3000`。
 
 ---
 

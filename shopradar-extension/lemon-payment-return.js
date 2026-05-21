@@ -7,10 +7,10 @@ var ShopRadarLemonReturn = (function () {
   var RETURN_TAB_KEY = 'sr_lemon_return_tab_id';
   var RETURN_URL_KEY = 'sr_lemon_return_url';
   var CHECKOUT_TAB_KEY = 'sr_lemon_checkout_tab_id';
-  var STORAGE_DEVICE_ID_KEY = 'sr_device_id';
-  var STORAGE_IS_PRO_KEY = 'sr_is_pro';
-  var STORAGE_ACCESS_TOKEN_KEY = 'sr_access_token';
-  var STORAGE_TOKEN_EXPIRES_KEY = 'sr_token_expires_at';
+  var STORAGE_DEVICE = 'sr_device_id';
+  var STORAGE_PRO = 'sr_is_pro';
+  var STORAGE_TOKEN = 'sr_access_token';
+  var STORAGE_TOKEN_EXP = 'sr_token_expires_at';
 
   var backgroundPollTimer = null;
   var backgroundPollActive = false;
@@ -61,6 +61,9 @@ var ShopRadarLemonReturn = (function () {
   }
 
   function getApiBase() {
+    if (typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getApiBase) {
+      return ShopRadarEnv.getApiBase();
+    }
     if (
       typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
       SHOPRADAR_EXTENSION_CONFIG.apiBase
@@ -76,64 +79,76 @@ var ShopRadarLemonReturn = (function () {
     });
   }
 
-  async function getSessionAccessToken() {
+  function tokenExpiresAt(payload) {
+    if (!payload) {
+      return 0;
+    }
+    if (payload.tokenExpiresAt != null) {
+      return Number(payload.tokenExpiresAt) || 0;
+    }
+    if (payload.tokenExpiresIn != null) {
+      return Date.now() + Number(payload.tokenExpiresIn) * 1000;
+    }
+    return 0;
+  }
+
+  async function saveAccessTokenFromPayload(payload) {
+    if (!payload || !payload.accessToken || !chrome.storage || !chrome.storage.session) {
+      return;
+    }
+    var exp = tokenExpiresAt(payload);
+    try {
+      var patch = {};
+      patch[STORAGE_TOKEN] = String(payload.accessToken);
+      patch[STORAGE_TOKEN_EXP] = exp || 0;
+      await chrome.storage.session.set(patch);
+    } catch (tokenErr) {
+      /* ignore */
+    }
+  }
+
+  async function saveProFromPayload(payload) {
+    if (!payload || !payload.isPro || !chrome.storage || !chrome.storage.local) {
+      return;
+    }
+    try {
+      await chrome.storage.local.set({ [STORAGE_PRO]: true });
+    } catch (persistErr) {
+      /* ignore */
+    }
+    await saveAccessTokenFromPayload(payload);
+  }
+
+  async function getStoredAccessToken() {
     if (!chrome.storage || !chrome.storage.session) {
       return '';
     }
     try {
-      var stored = await chrome.storage.session.get([
-        STORAGE_ACCESS_TOKEN_KEY,
-        STORAGE_TOKEN_EXPIRES_KEY,
-      ]);
-      var token = stored[STORAGE_ACCESS_TOKEN_KEY];
-      var expiresAt = Number(stored[STORAGE_TOKEN_EXPIRES_KEY] || 0);
+      var stored = await chrome.storage.session.get([STORAGE_TOKEN, STORAGE_TOKEN_EXP]);
+      var token = stored[STORAGE_TOKEN];
+      var expiresAt = Number(stored[STORAGE_TOKEN_EXP] || 0);
       if (!token) {
         return '';
       }
       if (expiresAt && expiresAt < Date.now()) {
-        await chrome.storage.session.remove([
-          STORAGE_ACCESS_TOKEN_KEY,
-          STORAGE_TOKEN_EXPIRES_KEY,
-        ]);
+        await chrome.storage.session.remove([STORAGE_TOKEN, STORAGE_TOKEN_EXP]);
         return '';
       }
       return String(token);
-    } catch (tokenErr) {
+    } catch (readErr) {
       return '';
     }
   }
 
-  async function saveProPayloadFromServer(data) {
-    if (!data) {
-      return false;
+  async function clearStoredAccessToken() {
+    if (!chrome.storage || !chrome.storage.session) {
+      return;
     }
-    if (data.accessToken && chrome.storage && chrome.storage.session) {
-      var expiresAt =
-        data.tokenExpiresAt != null
-          ? Number(data.tokenExpiresAt)
-          : data.tokenExpiresIn != null
-            ? Date.now() + Number(data.tokenExpiresIn) * 1000
-            : 0;
-      try {
-        var sessionPatch = {};
-        sessionPatch[STORAGE_ACCESS_TOKEN_KEY] = String(data.accessToken);
-        if (expiresAt) {
-          sessionPatch[STORAGE_TOKEN_EXPIRES_KEY] = expiresAt;
-        }
-        await chrome.storage.session.set(sessionPatch);
-      } catch (sessionErr) {
-        /* ignore */
-      }
+    try {
+      await chrome.storage.session.remove([STORAGE_TOKEN, STORAGE_TOKEN_EXP]);
+    } catch (clearErr) {
+      /* ignore */
     }
-    if (data.isPro && chrome.storage && chrome.storage.local) {
-      try {
-        await chrome.storage.local.set({ [STORAGE_IS_PRO_KEY]: true });
-      } catch (persistErr) {
-        /* ignore */
-      }
-      return true;
-    }
-    return Boolean(data.isPro);
   }
 
   async function fetchProStatusOnce(deviceId, accessToken) {
@@ -144,19 +159,50 @@ var ShopRadarLemonReturn = (function () {
     if (accessToken) {
       url += '&accessToken=' + encodeURIComponent(String(accessToken));
     }
-    var response = await fetch(url);
-    if (response.status === 401 && accessToken) {
-      response = await fetch(
-        getApiBase() +
-          '/api/pro-status?deviceId=' +
-          encodeURIComponent(String(deviceId))
-      );
-    }
-    if (!response.ok) {
+    return fetch(url);
+  }
+
+  async function parseProStatusResponse(response) {
+    var data = null;
+    try {
+      data = await response.json();
+    } catch (parseErr) {
       return false;
     }
-    var data = await response.json();
-    return saveProPayloadFromServer(data);
+    if (data && data.isPro) {
+      await saveProFromPayload(data);
+      return true;
+    }
+    return false;
+  }
+
+  async function fetchProStatusFromServer() {
+    if (!chrome.storage || !chrome.storage.local) {
+      return false;
+    }
+    try {
+      var stored = await chrome.storage.local.get([STORAGE_DEVICE]);
+      var deviceId = stored[STORAGE_DEVICE];
+      if (!deviceId) {
+        return false;
+      }
+
+      var accessToken = await getStoredAccessToken();
+      var response = await fetchProStatusOnce(deviceId, accessToken);
+
+      if (response.status === 401 && accessToken) {
+        await clearStoredAccessToken();
+        response = await fetchProStatusOnce(deviceId, '');
+      }
+
+      if (response.ok) {
+        return await parseProStatusResponse(response);
+      }
+
+      return await parseProStatusResponse(response);
+    } catch (err) {
+      return false;
+    }
   }
 
   async function saveReturnContext(tabId, url) {
@@ -196,23 +242,6 @@ var ShopRadarLemonReturn = (function () {
       ]);
     } catch (err) {
       /* ignore */
-    }
-  }
-
-  async function fetchProStatusFromServer() {
-    if (!chrome.storage || !chrome.storage.local) {
-      return false;
-    }
-    try {
-      var stored = await chrome.storage.local.get([STORAGE_DEVICE_ID_KEY]);
-      var deviceId = stored[STORAGE_DEVICE_ID_KEY];
-      if (!deviceId) {
-        return false;
-      }
-      var accessToken = await getSessionAccessToken();
-      return await fetchProStatusOnce(deviceId, accessToken);
-    } catch (err) {
-      return false;
     }
   }
 
@@ -325,7 +354,7 @@ var ShopRadarLemonReturn = (function () {
       return;
     }
     backgroundPollActive = true;
-    var deadline = Date.now() + 26000;
+    var deadline = Date.now() + 90000;
     try {
       while (Date.now() < deadline) {
         if (await fetchProStatusFromServer()) {
@@ -358,7 +387,7 @@ var ShopRadarLemonReturn = (function () {
           if (!isCheckoutTab && !isLemonSuccessUrl(url)) {
             return;
           }
-          if (isLemonSuccessUrl(url) || changeInfo.status === 'complete') {
+          if (isLemonSuccessUrl(url)) {
             scheduleBackgroundProPoll();
           }
         })

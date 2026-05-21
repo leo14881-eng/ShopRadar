@@ -109,13 +109,12 @@
       kicker: 'Vista previa Pro',
       title: 'Ranking de interés de hoy',
       subtitle: 'Agregado de navegación anónima ShopRadar · actualizado cada hora',
-      deviceId: 'ID de dispositivo:',
-      deviceHint:
-        'Mismo ID que la extensión Chrome — recarga esta página para sincronizar o abre el panel desde la extensión.',
-      incognitoHint:
-        'El modo incógnito crea un nuevo ID — Pro permanece en el ID del pago. Usa ventana normal y abre el panel desde la extensión.',
+      proStatusLabel: 'Estado Pro',
+      proStatusActive: 'Pro activo',
+      proStatusFree: 'No activo',
+      proExpiresLabel: 'Pro vence',
+      proExpiresNone: '—',
       polling: 'Confirmando tu suscripción Pro…',
-      unlocked: '✓ Pro desbloqueado — métricas completas visibles.',
       disclaimer:
         'El ranking refleja interés de usuarios ShopRadar, no ventas verificadas. Ingresos estimados solo para comparar.',
       liveRanking: 'Ranking de interés',
@@ -219,13 +218,12 @@
       kicker: 'Pro ダッシュボードプレビュー',
       title: '本日の研究ヒートランキング',
       subtitle: 'ShopRadar 匿名閲覧の集計 · 毎時更新',
-      deviceId: 'デバイス ID:',
-      deviceHint:
-        'Chrome 拡張と同じ ID — ページを更新して同期、または拡張からダッシュボードを開く。',
-      incognitoHint:
-        'シークレットモードは新しい ID を生成 — Pro は決済 ID に紐付き。通常ウィンドウで拡張から開いてください。',
+      proStatusLabel: 'Pro 状態',
+      proStatusActive: 'Pro 有効',
+      proStatusFree: '未加入',
+      proExpiresLabel: 'Pro 有効期限',
+      proExpiresNone: '—',
       polling: 'Pro サブスクリプションを確認中…',
-      unlocked: '✓ Pro 解除 — 全ヒート指標を表示。',
       disclaimer:
         'ランキングは ShopRadar ユーザーの閲覧熱であり、確認済み売上ではありません。収益は推定値です。',
       liveRanking: 'ヒートランキング',
@@ -329,13 +327,12 @@
       kicker: 'Pro 대시보드 미리보기',
       title: '오늘의 연구 열 순위',
       subtitle: 'ShopRadar 익명 조회 집계 · 매시간 업데이트',
-      deviceId: '기기 ID:',
-      deviceHint:
-        'Chrome 확장과 동일 ID — 페이지 새로고침으로 동기화하거나 확장에서 대시보드를 여세요.',
-      incognitoHint:
-        '시크릿 모드는 새 기기 ID 생성 — Pro는 결제 ID에 유지. 일반 창에서 확장으로 여세요.',
+      proStatusLabel: 'Pro 상태',
+      proStatusActive: 'Pro 활성',
+      proStatusFree: '미가입',
+      proExpiresLabel: 'Pro 만료',
+      proExpiresNone: '—',
       polling: 'Pro 구독 확인 중…',
-      unlocked: '✓ Pro 잠금 해제 — 전체 열 지표 표시.',
       disclaimer:
         '순위는 ShopRadar 사용자 조회 열이며 확인된 판매가 아닙니다. 수익은 추정치입니다.',
       liveRanking: '열 순위',
@@ -440,13 +437,12 @@
       kicker: 'Prévia Pro',
       title: 'Ranking de interesse de hoje',
       subtitle: 'Agregado de navegação anônima ShopRadar · atualizado a cada hora',
-      deviceId: 'ID do dispositivo:',
-      deviceHint:
-        'Mesmo ID da extensão Chrome — recarregue a página ou abra o dashboard pela extensão.',
-      incognitoHint:
-        'Modo anônimo cria novo ID — Pro permanece no ID do pagamento. Use janela normal.',
+      proStatusLabel: 'Status Pro',
+      proStatusActive: 'Pro ativo',
+      proStatusFree: 'Não ativo',
+      proExpiresLabel: 'Pro expira',
+      proExpiresNone: '—',
       polling: 'Confirmando assinatura Pro…',
-      unlocked: '✓ Pro desbloqueado — métricas completas visíveis.',
       disclaimer:
         'Ranking reflete interesse de usuários ShopRadar, não vendas verificadas.',
       liveRanking: 'Ranking de interesse',
@@ -549,13 +545,12 @@
       kicker: 'Pro 大盤預覽',
       title: '今日研究熱度排行榜',
       subtitle: '基於 ShopRadar 用戶匿名瀏覽熱度的聚合排名 · 每小時更新',
-      deviceId: '裝置 ID：',
-      deviceHint:
-        '與 Chrome 外掛共用同一 ID（需已安裝外掛並重新整理本頁自動同步；或從外掛側邊欄點擊「開啟大盤」）。',
-      incognitoHint:
-        '無痕/隱私模式會產生新的裝置 ID，Pro 仍綁定於付款時的原 ID。請用正常視窗並從外掛開啟大盤。',
+      proStatusLabel: 'Pro 狀態',
+      proStatusActive: 'Pro 已開通',
+      proStatusFree: '未開通 Pro',
+      proExpiresLabel: 'Pro 到期時間',
+      proExpiresNone: '—',
       polling: '正在確認 Pro 訂閱…',
-      unlocked: '✓ Pro 已解鎖 — 完整熱度指標可見。',
       disclaimer:
         '排名依據 ShopRadar 用戶瀏覽熱度，不代表真實銷量或廣告投放數據。營收為演算法估算，僅供對比參考。',
       liveRanking: '研究熱度排名',

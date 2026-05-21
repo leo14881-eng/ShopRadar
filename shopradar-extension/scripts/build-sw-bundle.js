@@ -6,9 +6,15 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
+const PRODUCTION_MODE =
+  process.argv.includes('--production') ||
+  process.env.SHOPRADAR_BUILD_ENV === 'production';
+const ENV_FILE = PRODUCTION_MODE
+  ? 'extension-env.production.js'
+  : 'extension-env.js';
 const PARTS = [
   'extension-config.js',
-  'local-dev-config.js',
+  ENV_FILE,
   'extension-guard.js',
   'shop-permissions.js',
   'shop-processor.js',
@@ -20,7 +26,11 @@ const PARTS = [
   'background-jobs.js',
 ];
 const BOOTSTRAP_FILE = 'background.sw-bootstrap.js';
-const OUTPUT_FILE = 'background.js';
+const outArgIdx = process.argv.indexOf('--out');
+const OUTPUT_FILE =
+  outArgIdx >= 0 && process.argv[outArgIdx + 1]
+    ? process.argv[outArgIdx + 1]
+    : 'background.js';
 
 var header =
   '/* ShopRadar background.js — 自动生成，请勿手改。修改源文件后运行: npm run build:sw */\n';
@@ -47,7 +57,10 @@ if (!fs.existsSync(bootstrapPath)) {
 body += '\n';
 body += fs.readFileSync(bootstrapPath, 'utf8');
 
-var outPath = path.join(ROOT, OUTPUT_FILE);
+var outPath = path.isAbsolute(OUTPUT_FILE)
+  ? OUTPUT_FILE
+  : path.join(ROOT, OUTPUT_FILE);
+fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, header + body, 'utf8');
 
 console.log(

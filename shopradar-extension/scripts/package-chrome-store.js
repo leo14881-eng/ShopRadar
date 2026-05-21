@@ -14,7 +14,7 @@ const ZIP_PATH = path.join(ROOT, 'ShopRadar-chrome-store.zip');
 const INCLUDE_FILES = [
   'manifest.json',
   'extension-config.js',
-  'local-dev-config.js',
+  'extension-env.js',
   'extension-guard.js',
   'shop-permissions.js',
   'popup.html',
@@ -35,7 +35,9 @@ const INCLUDE_DIRS = ['icons', '_locales'];
 
 const FORBIDDEN_SNIPPETS = [
   'localhost:3000',
-  '__SHOPRADAR_LOCAL_DEV__ = true',
+  'localhost:8080',
+  'isUnpackedExtensionLoad',
+  'shopradar_env === \'production\'',
   'ngrok',
   'trycloudflare',
   'USE_PROD_API',
@@ -61,14 +63,15 @@ function copyDir(srcDir, destDir) {
 }
 
 function main() {
-  execSync('npm run build:sw', { cwd: ROOT, stdio: 'inherit' });
-
   if (fs.existsSync(OUT_DIR)) {
     fs.rmSync(OUT_DIR, { recursive: true, force: true });
   }
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   for (const file of INCLUDE_FILES) {
+    if (file === 'background.js') {
+      continue;
+    }
     const src = path.join(ROOT, file);
     if (!fs.existsSync(src)) {
       console.error('缺少文件:', file);
@@ -76,6 +79,21 @@ function main() {
     }
     copyFile(src, path.join(OUT_DIR, file));
   }
+
+  execSync(
+    'node scripts/build-sw-bundle.js --production --out "' +
+      path.join(OUT_DIR, 'background.js').replace(/\\/g, '/') +
+      '"',
+    { cwd: ROOT, stdio: 'inherit' }
+  );
+
+  // 商店包固定线上环境（覆盖开发版 extension-env.js）
+  const prodEnv = path.join(ROOT, 'extension-env.production.js');
+  if (!fs.existsSync(prodEnv)) {
+    console.error('缺少文件: extension-env.production.js');
+    process.exit(1);
+  }
+  copyFile(prodEnv, path.join(OUT_DIR, 'extension-env.js'));
 
   for (const dir of INCLUDE_DIRS) {
     const src = path.join(ROOT, dir);
@@ -86,13 +104,14 @@ function main() {
     copyDir(src, path.join(OUT_DIR, dir));
   }
 
-  const manifest = JSON.parse(
-    fs.readFileSync(path.join(OUT_DIR, 'manifest.json'), 'utf8')
-  );
+  const manifestPath = path.join(OUT_DIR, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.shopradar_env = 'production';
   if (!manifest.icons || !manifest.icons['128']) {
     console.error('manifest 缺少 icons');
     process.exit(1);
   }
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 
   for (const file of INCLUDE_FILES) {
     if (!file.endsWith('.js')) {

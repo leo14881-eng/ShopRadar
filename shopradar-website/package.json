@@ -1,0 +1,12 @@
+{
+  "name": "shopradar-website",
+  "private": true,
+  "description": "ShopRadar 官网与爆品大盘静态站点",
+  "scripts": {
+    "dev": "serve -l 8080 .",
+    "start": "serve -l 8080 ."
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}

@@ -11,11 +11,18 @@
   var STORAGE_TOKEN = 'sr_access_token';
   var STORAGE_TOKEN_EXP = 'sr_token_expires_at';
 
-  var API_BASE =
-    typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
-    SHOPRADAR_EXTENSION_CONFIG.apiBase
-      ? String(SHOPRADAR_EXTENSION_CONFIG.apiBase).replace(/\/$/, '')
-      : 'https://api.shopradar.uk';
+  function getApiBase() {
+    if (typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getApiBase) {
+      return ShopRadarEnv.getApiBase();
+    }
+    if (
+      typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
+      SHOPRADAR_EXTENSION_CONFIG.apiBase
+    ) {
+      return String(SHOPRADAR_EXTENSION_CONFIG.apiBase).replace(/\/$/, '');
+    }
+    return 'https://api.shopradar.uk';
+  }
 
   function readQueryDeviceId() {
     try {
@@ -44,11 +51,18 @@
       return Promise.resolve(null);
     }
     return fetch(
-      API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId),
+      getApiBase() + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId),
       { credentials: 'omit' }
     )
       .then(function (response) {
-        return response.ok ? response.json() : null;
+        return response
+          .json()
+          .catch(function () {
+            return null;
+          })
+          .then(function (data) {
+            return data;
+          });
       })
       .catch(function () {
         return null;
@@ -95,6 +109,8 @@
           detail: {
             deviceId: deviceId,
             isPro: Boolean(payload && payload.isPro),
+            proExpiresAt:
+              payload && payload.proExpiresAt ? String(payload.proExpiresAt) : '',
             payload: payload || null,
           },
         })

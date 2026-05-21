@@ -16,7 +16,7 @@ const {
   isLemonWebhookSecretConfigured,
 } = require('./lemon-webhook');
 const { handleLemonWebhookEvent } = require('./lemon-webhook-handler');
-const { savePendingProClaim } = require('./pro-claim');
+const { savePendingProClaim, saveProEmailRegistry, logProWebhookIdentity } = require('./pro-claim');
 const { parseAcceptLanguage } = require('./i18n-messages');
 const {
   queryTrendingGolden,
@@ -179,6 +179,8 @@ function mountV1Routes(app, db, deps) {
         dbRun: dbRun,
         getTodayDateString: getTodayDateString,
         savePendingProClaim: savePendingProClaim,
+        saveProEmailRegistry: saveProEmailRegistry,
+        logProWebhookIdentity: logProWebhookIdentity,
       });
     })
       .then(function (result) {

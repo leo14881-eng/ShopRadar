@@ -49,27 +49,39 @@
         return new Promise(function (r) { setTimeout(r, ms); });
       }
 
+      var STORAGE_DEVICE_ID = 'sr_device_id';
+      var STORAGE_ACCESS_TOKEN = 'sr_access_token';
+      var STORAGE_TOKEN_EXPIRES = 'sr_token_expires_at';
+
+      function saveAccessTokenFromPayload(payload) {
+        if (!payload || !payload.accessToken) {
+          return;
+        }
+        try {
+          sessionStorage.setItem(STORAGE_ACCESS_TOKEN, String(payload.accessToken));
+          var exp =
+            payload.tokenExpiresAt != null
+              ? Number(payload.tokenExpiresAt)
+              : payload.tokenExpiresIn != null
+                ? Date.now() + Number(payload.tokenExpiresIn) * 1000
+                : 0;
+          if (exp) {
+            sessionStorage.setItem(STORAGE_TOKEN_EXPIRES, String(exp));
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
       function fetchPro(deviceId) {
-        return fetch(
-          API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId)
-        )
+        return fetch(API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId))
           .then(function (res) {
-            return res.ok ? res.json() : { isPro: false };
+            return res.json().catch(function () {
+              return { isPro: false };
+            });
           })
           .then(function (data) {
-            if (data && data.accessToken) {
-              try {
-                sessionStorage.setItem('sr_access_token', String(data.accessToken));
-                if (data.tokenExpiresAt) {
-                  sessionStorage.setItem(
-                    'sr_token_expires_at',
-                    String(data.tokenExpiresAt)
-                  );
-                }
-              } catch (tokenErr) {
-                /* ignore */
-              }
-            }
+            saveAccessTokenFromPayload(data);
             return Boolean(data && data.isPro);
           })
           .catch(function () {

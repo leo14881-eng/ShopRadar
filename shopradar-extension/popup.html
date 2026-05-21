@@ -369,16 +369,166 @@
       color: #f0a0a8;
     }
 
+    .content.pro-summary-only {
+      justify-content: center;
+      padding: 24px 20px;
+    }
+
+    .content.pro-summary-only .state-panel {
+      display: none !important;
+    }
+
+    .idle-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 12px;
+      width: 100%;
+      max-width: 280px;
+      animation: fadeIn 0.35s ease;
+    }
+
+    .idle-hero.hidden {
+      display: none;
+    }
+
+    .idle-hero-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      background: linear-gradient(145deg, rgba(52, 211, 153, 0.18) 0%, rgba(61, 158, 255, 0.12) 100%);
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      box-shadow: 0 8px 24px rgba(52, 211, 153, 0.12);
+    }
+
+    .idle-hero-title {
+      font-size: 17px;
+      font-weight: 600;
+      color: #f0f0f5;
+      letter-spacing: 0.02em;
+    }
+
+    .idle-hero-desc {
+      font-size: 13px;
+      line-height: 1.55;
+      color: #8a8a98;
+      max-width: 240px;
+    }
+
     .panel-footer {
       flex-shrink: 0;
       margin-top: auto;
+      padding: 12px 16px 16px;
       border-top: 1px solid rgba(255, 255, 255, 0.06);
-      background: rgba(10, 10, 12, 0.85);
+      background: rgba(8, 8, 10, 0.92);
+    }
+
+    .account-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .account-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 11px 14px;
+    }
+
+    .account-row + .account-row {
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .account-row-device {
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .account-row-device:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .account-label {
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 500;
+      color: #6b6b78;
+      letter-spacing: 0.04em;
+    }
+
+    .account-value {
+      font-size: 12px;
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .account-value.pro-status-on {
+      color: #6ee7a0;
+    }
+
+    .account-value.pro-status-off {
+      color: #9a9aa8;
+    }
+
+    .account-device-wrap {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+    }
+
+    .account-device-id {
+      font-family: ui-monospace, "Cascadia Code", "SF Mono", Monaco, monospace;
+      font-size: 10px;
+      color: #b8b8c4;
+      word-break: break-all;
+      text-align: right;
+      line-height: 1.35;
+      max-width: 100%;
+    }
+
+    .account-copy-hint {
+      font-size: 9px;
+      color: #5a5a68;
+    }
+
+    .api-env-bar {
+      flex-shrink: 0;
+      margin: 0 0 8px;
+      padding: 0 2px;
+      font-size: 10px;
+      line-height: 1.4;
+      color: #fbbf24;
+    }
+
+    .api-env-bar.hidden {
+      display: none;
     }
 
     .footer {
       flex-shrink: 0;
-      padding: 10px 16px 14px;
+      padding: 10px 0 0;
+    }
+
+    .pro-status-bar {
+      display: none;
+    }
+
+    .device-id-bar {
+      display: none;
     }
 
     #export-btn {
@@ -402,6 +552,10 @@
 
     #export-btn.is-success {
       background: linear-gradient(135deg, #86efac 0%, #4ade80 100%);
+    }
+
+    .footer-export.hidden {
+      display: none;
     }
 
     .pro-mask {
@@ -469,23 +623,71 @@
       cursor: wait;
     }
 
-    .device-id-bar {
-      flex-shrink: 0;
-      margin: 0;
-      padding: 6px 16px 0;
-      font-size: 10px;
-      line-height: 1.4;
-      color: #6a6a78;
-      cursor: pointer;
-      user-select: none;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
+    .claim-pro-section {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      text-align: left;
     }
 
-    .device-id-bar code {
+    .claim-pro-label {
+      font-size: 11px;
       color: #8a8a98;
-      font-size: 10px;
+      margin: 0 0 8px;
+      text-align: center;
+    }
+
+    #claim-pro-email {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border: 1px solid #3a3a48;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #e8e8ee;
+      background: #0f0f14;
+    }
+
+    #claim-pro-email:focus {
+      outline: none;
+      border-color: #f59e0b;
+    }
+
+    #claim-pro-btn {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #3a3a48;
+      border-radius: 10px;
+      font-weight: 500;
+      font-size: 13px;
+      cursor: pointer;
+      color: #d4d4dc;
+      background: transparent;
+    }
+
+    #claim-pro-btn:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    #claim-pro-msg {
+      margin: 8px 0 0;
+      font-size: 11px;
+      line-height: 1.45;
+      text-align: center;
+    }
+
+    #claim-pro-msg.hidden {
+      display: none;
+    }
+
+    #claim-pro-msg.is-error {
+      color: #f87171;
+    }
+
+    #claim-pro-msg.is-success {
+      color: #86efac;
     }
 
     .dashboard-link {
@@ -534,6 +736,14 @@
     </header>
 
     <main class="content" id="mainContent">
+      <section id="idleHero" class="idle-hero hidden" aria-hidden="true">
+        <div class="idle-hero-icon" aria-hidden="true">✓</div>
+        <p class="idle-hero-title" id="idleHeroTitle">Pro 已开通</p>
+        <p class="idle-hero-desc" id="idleHeroDesc">
+          打开任意 Shopify / SFCC 店铺，即可查看商品列表与导出 Excel
+        </p>
+      </section>
+
       <div class="state-panel state-loading active" id="stateLoading">
         <div class="spinner" aria-hidden="true"></div>
         <p class="state-text" id="loadingText"></p>
@@ -567,13 +777,27 @@
     </main>
 
     <div class="panel-footer">
-      <a href="#" id="open-dashboard-link" class="dashboard-link" target="_blank" rel="noopener noreferrer">
-        📊 Open Trending Dashboard
-      </a>
-      <p class="device-id-bar" id="device-id-bar" title="点击复制 Device ID">
-        Device ID: <code id="deviceIdText">—</code>
-      </p>
-      <footer class="footer">
+      <p class="api-env-bar hidden" id="api-env-bar" aria-hidden="true"></p>
+      <div class="account-card">
+        <div class="account-row">
+          <span class="account-label">Pro 状态</span>
+          <span id="pro-status-text" class="account-value">—</span>
+        </div>
+        <div
+          class="account-row account-row-device"
+          id="device-id-bar"
+          title="点击复制 Device ID"
+          role="button"
+          tabindex="0"
+        >
+          <span class="account-label">Device ID</span>
+          <div class="account-device-wrap">
+            <code id="deviceIdText" class="account-device-id">—</code>
+            <span class="account-copy-hint">点击复制</span>
+          </div>
+        </div>
+      </div>
+      <footer class="footer footer-export hidden" id="export-footer">
         <button type="button" id="export-btn">一键导出 Excel (Pro)</button>
       </footer>
     </div>
@@ -585,11 +809,17 @@
       <p id="limitOverlayDesc"></p>
       <button type="button" id="unlock-pro-btn"></button>
       <button type="button" id="refresh-pro-btn" class="refresh-pro-btn"></button>
+      <div class="claim-pro-section">
+        <p id="claim-pro-label" class="claim-pro-label">已有 Pro？用付款邮箱恢复</p>
+        <input type="email" id="claim-pro-email" autocomplete="email" spellcheck="false" />
+        <button type="button" id="claim-pro-btn">邮箱恢复 Pro</button>
+        <p id="claim-pro-msg" class="claim-pro-msg hidden" aria-live="polite"></p>
+      </div>
     </div>
   </div>
 
   <script src="extension-config.js"></script>
-  <script src="local-dev-config.js"></script>
+  <script src="extension-env.js"></script>
   <script src="extension-guard.js"></script>
   <script src="shop-permissions.js"></script>
   <script src="shop-processor.js"></script>
