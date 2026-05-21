@@ -13,6 +13,7 @@ const ROOT = path.resolve(__dirname, '..');
 
 /** 合并进 background.js 的源文件（npm run build:sw） */
 const SW_BUILD_SOURCES = [
+  'console-shield.js',
   'shop-permissions.js',
   'shop-processor.js',
   'shop-url.js',
@@ -44,6 +45,27 @@ const FORBIDDEN_HOST_PERMISSIONS = ['<all_urls>', '*://*/*', 'http://*/*'];
 const FORBIDDEN_CODE_PATTERNS = [
   /\beval\s*\(/,
   /\bnew\s+Function\s*\(/,
+];
+const CONSOLE_ERROR_CALL = /\bconsole\.error\s*\(/;
+const RUNTIME_JS_FILES = [
+  'console-shield.js',
+  'extension-config.js',
+  'extension-env.js',
+  'extension-guard.js',
+  'shop-permissions.js',
+  'shop-processor.js',
+  'shop-url.js',
+  'shop-export.js',
+  'detection-cache.js',
+  'store-detect.js',
+  'sfcc-fetch.js',
+  'product-ingest.js',
+  'lemon-payment-return.js',
+  'website-device-sync.js',
+  'background.sw-bootstrap.js',
+  'background-jobs.js',
+  'background-entry.js',
+  'popup.js',
 ];
 const FORBIDDEN_STORE_TERMS = /\b(shopify\s*spy|data\s*scraper|web\s*scraper)\b/i;
 
@@ -132,6 +154,32 @@ function checkExtensionCodeSafety() {
   if (!failed) {
     ok('扩展 JS 无 eval / new Function');
   }
+}
+
+function checkNoConsoleErrorCalls() {
+  RUNTIME_JS_FILES.forEach(function (fileName) {
+    var filePath = path.join(ROOT, fileName);
+    if (!fs.existsSync(filePath)) {
+      return;
+    }
+    var source = stripComments(readFile(fileName));
+    if (CONSOLE_ERROR_CALL.test(source)) {
+      fail(fileName + ' 含 console.error()，请改为 console.log / console.warn');
+    }
+  });
+  if (backgroundExists()) {
+    var bgSource = stripComments(readFile('background.js'));
+    if (CONSOLE_ERROR_CALL.test(bgSource)) {
+      fail('background.js 含 console.error()，请重新 npm run build:sw');
+    }
+  }
+  if (!failed) {
+    ok('运行时 JS 无 console.error() 调用');
+  }
+}
+
+function backgroundExists() {
+  return fs.existsSync(path.join(ROOT, 'background.js'));
 }
 
 function checkPopupNoRemoteScripts() {
@@ -375,6 +423,7 @@ console.log('ShopRadar 扩展校验\n');
 checkManifest();
 checkManifestIcons();
 checkExtensionCodeSafety();
+checkNoConsoleErrorCalls();
 checkPopupNoRemoteScripts();
 EXTENSION_JS_FILES.forEach(checkSyntax);
 checkBackgroundBuildFresh();

@@ -36,6 +36,7 @@ const proStatusTextEl = document.getElementById('pro-status-text');
 const idleHeroEl = document.getElementById('idleHero');
 const idleHeroTitleEl = document.getElementById('idleHeroTitle');
 const idleHeroDescEl = document.getElementById('idleHeroDesc');
+const idleHeroDomainEl = document.getElementById('idleHeroDomain');
 const apiEnvBarEl = document.getElementById('api-env-bar');
 const deviceIdTextEl = document.getElementById('deviceIdText');
 
@@ -48,7 +49,8 @@ const UI_TEXT = {
   statusDetecting: '检测中',
   statusShopify: 'Shopify 店铺',
   statusSfcc: 'SFCC 店铺',
-  statusNotShopify: '非 Shopify',
+  statusNotShopify: '等待店铺页',
+  statusIdleReady: '准备就绪',
   loading: '正在检测店铺类型...',
   successTitle: '成功检测到 Shopify 店铺！',
   successTitleSfcc: '成功检测到 SFCC 店铺！',
@@ -86,9 +88,21 @@ const UI_TEXT = {
   authServerOffline:
     '无法连接鉴权服务。请先在终端执行：cd shopradar-server → npm start，然后刷新本侧边栏。',
   proReadySwitchShop: 'Pro 已开通',
+  idleHeroTitleReady: '准备就绪',
+  idleHeroTitleNotShopify: '当前站点不是 Shopify / SFCC',
+  idleHeroTitleNotShopifySfcc: '检测到 SFCC，请打开店铺页',
+  idleHeroTitlePermission: '需要访问此网站',
+  idleHeroTitleReload: '请重新加载扩展',
   idleHeroDescPro:
     '打开任意 Shopify / SFCC 店铺，即可查看商品列表与导出 Excel',
-  idleHeroDescFree: '升级 Pro 后可无限查询并导出 Excel',
+  idleHeroDescFree:
+    '打开 Shopify / SFCC 店铺即可检测商品；升级 Pro 可无限查询并导出 Excel',
+  idleHeroDescNotShopify:
+    '此页面无法分析商品。请切换到 Shopify 或 SFCC 店铺页面。',
+  idleHeroDescPermission:
+    '点击下方按钮授权访问，或在扩展设置中将站点权限设为「在所有网站上」。',
+  idleHeroDescReload:
+    '扩展代码已更新。请关闭侧边栏，在 chrome://extensions 重新加载 ShopRadar 后再打开。',
   paymentConfirming: '正在确认支付结果，成功后自动返回店铺页…',
   paymentPendingSwitchShop:
     '请在 Lemon 页面完成付款。付款成功后将自动返回店铺页。',
@@ -928,10 +942,7 @@ function updateProStatusBar(isPro) {
       : UI_TEXT.idleHeroDescFree;
   }
   if (idleHeroEl && idleHeroEl.classList.contains('hidden') === false) {
-    const iconEl = idleHeroEl.querySelector('.idle-hero-icon');
-    if (iconEl) {
-      iconEl.textContent = isPro ? '\u2713' : '\u2728';
-    }
+    applyIdleHeroIconVariant(isPro ? 'pro' : 'neutral');
   }
 }
 
@@ -939,8 +950,9 @@ async function syncProStatusBar() {
   updateProStatusBar(await hasProAccess());
 }
 
-function setProSummaryOnlyMode(enabled) {
+function setIdleBrowseMode(enabled, statusVariant) {
   if (mainContent) {
+    mainContent.classList.toggle('idle-browse-mode', Boolean(enabled));
     mainContent.classList.toggle('pro-summary-only', Boolean(enabled));
   }
   if (idleHeroEl) {
@@ -952,9 +964,121 @@ function setProSummaryOnlyMode(enabled) {
     }
   }
   if (enabled && statusIndicator) {
-    statusIndicator.classList.remove('fail');
-    statusIndicator.classList.add('success');
-    statusIndicator.title = 'Pro 已开通';
+    statusIndicator.classList.remove('fail', 'success', 'neutral');
+    if (statusVariant === 'success') {
+      statusIndicator.classList.add('success');
+      statusIndicator.title = UI_TEXT.proReadySwitchShop;
+    } else if (statusVariant === 'neutral') {
+      statusIndicator.classList.add('neutral');
+      statusIndicator.title = UI_TEXT.statusIdleReady;
+    } else {
+      statusIndicator.title = UI_TEXT.statusIdleReady;
+    }
+  }
+}
+
+/** @deprecated 使用 setIdleBrowseMode */
+function setProSummaryOnlyMode(enabled) {
+  setIdleBrowseMode(enabled, enabled ? 'success' : null);
+}
+
+function getIdleHeroIconChar(variant) {
+  if (variant === 'pro') {
+    return '\u2713';
+  }
+  if (variant === 'permission') {
+    return '\uD83D\uDD12';
+  }
+  if (variant === 'reload') {
+    return '\uD83D\uDD04';
+  }
+  return '\uD83D\uDECD';
+}
+
+function applyIdleHeroIconVariant(variant) {
+  if (!idleHeroEl) {
+    return;
+  }
+  var iconEl = idleHeroEl.querySelector('.idle-hero-icon');
+  if (!iconEl) {
+    return;
+  }
+  iconEl.className = 'idle-hero-icon idle-hero-icon--' + (variant || 'neutral');
+  iconEl.textContent = getIdleHeroIconChar(variant);
+}
+
+function resetIdleBrowseLayout() {
+  setIdleBrowseMode(false);
+  hideGrantAccessButton();
+  if (idleHeroDomainEl) {
+    idleHeroDomainEl.textContent = '';
+    idleHeroDomainEl.classList.add('hidden');
+  }
+}
+
+function isIdleBrowseActive() {
+  return Boolean(mainContent && mainContent.classList.contains('idle-browse-mode'));
+}
+
+/**
+ * 统一的「非店铺页 / 等待店铺」中性提示（无红 X）
+ * @param {object} [opts]
+ * @param {'pro'|'neutral'|'permission'|'reload'} [opts.variant]
+ * @param {string} [opts.title]
+ * @param {string} [opts.desc]
+ * @param {string} [opts.domain]
+ * @param {'success'|'neutral'} [opts.statusVariant]
+ * @param {boolean} [opts.showGrantAccess]
+ * @param {boolean} [opts.silentRecovery]
+ */
+function showIdlePrompt(opts) {
+  var options = opts || {};
+  clearFailStateRetries();
+  stopProductAutoRefresh();
+  isProductsLoading = false;
+  setProductsLoading(false);
+  rawProductsForExport = null;
+  productListEl.innerHTML = '';
+  productsEmpty.classList.remove('visible');
+  currentStoreType = 'none';
+  setExportButtonVisible(false);
+
+  panels.forEach(function (panel) {
+    panel.classList.remove('active');
+  });
+
+  var variant = options.variant || 'neutral';
+  if (idleHeroTitleEl) {
+    idleHeroTitleEl.textContent = options.title || UI_TEXT.idleHeroTitleReady;
+  }
+  if (idleHeroDescEl) {
+    idleHeroDescEl.textContent = options.desc || UI_TEXT.idleHeroDescPro;
+  }
+  if (idleHeroDomainEl) {
+    if (options.domain) {
+      idleHeroDomainEl.textContent = options.domain;
+      idleHeroDomainEl.classList.remove('hidden');
+    } else {
+      idleHeroDomainEl.textContent = '';
+      idleHeroDomainEl.classList.add('hidden');
+    }
+  }
+
+  applyIdleHeroIconVariant(variant);
+  hideGrantAccessButton();
+  if (options.showGrantAccess && grantAccessBtnEl) {
+    grantAccessBtnEl.textContent = UI_TEXT.grantSiteAccess;
+    grantAccessBtnEl.classList.remove('hidden');
+  }
+
+  var statusVariant =
+    options.statusVariant || (variant === 'pro' ? 'success' : 'neutral');
+  setIdleBrowseMode(true, statusVariant);
+
+  if (options.silentRecovery && options.domain) {
+    currentShopDomain = options.domain;
+    lastConfirmedNonShopDomain = options.domain;
+    scheduleFailStateSilentRecovery(options.domain);
   }
 }
 
@@ -2159,6 +2283,10 @@ function showState(state) {
     fail: stateFail,
   };
 
+  if (state === 'success' || state === 'loading') {
+    resetIdleBrowseLayout();
+  }
+
   panels.forEach((panel) => panel.classList.remove('active'));
   map[state].classList.add('active');
 
@@ -2172,7 +2300,7 @@ function showState(state) {
     setProSummaryOnlyMode(false);
   }
 
-  statusIndicator.classList.remove('success', 'fail');
+  statusIndicator.classList.remove('success', 'fail', 'neutral');
   if (state === 'success') {
     statusIndicator.classList.add('success');
     statusIndicator.title =
@@ -2181,6 +2309,7 @@ function showState(state) {
     statusIndicator.classList.add('fail');
     statusIndicator.title = UI_TEXT.statusNotShopify;
   } else {
+    statusIndicator.classList.add('neutral');
     statusIndicator.title = UI_TEXT.statusDetecting;
   }
 
@@ -2202,7 +2331,7 @@ function extractDomain(url) {
 }
 
 /**
- * 根据检测到的非 Shopify 平台更新失败态文案
+ * 根据检测到的非 Shopify 平台更新文案（保留供 i18n 扩展）
  * @param {string} [platform]
  */
 function applyFailPlatformHint(platform) {
@@ -2217,30 +2346,34 @@ function applyFailPlatformHint(platform) {
 }
 
 /**
- * 展示「非 Shopify 网站」（同页不重复转圈；仅静默探测 SPA 晚挂载）
+ * 展示「非 Shopify / SFCC 店铺」中性提示（同页不重复转圈；仅静默探测 SPA 晚挂载）
  * @param {string} [platform]
  * @param {string} [domain]
  */
-function showNonShopifyState(platform, domain) {
-  clearFailStateRetries();
-  stopProductAutoRefresh();
+async function showNonShopifyState(platform, domain) {
   hideGrantAccessButton();
-  isProductsLoading = false;
-  setProductsLoading(false);
-  rawProductsForExport = null;
-  productListEl.innerHTML = '';
-  productsEmpty.classList.remove('visible');
-  currentStoreType = 'none';
   if (domain) {
     currentShopDomain = domain;
-    lastConfirmedNonShopDomain = domain;
   }
-  applyFailPlatformHint(platform);
-  if (failEmojiEl) {
-    failEmojiEl.textContent = UI_TEXT.failEmoji;
-  }
-  showState('fail');
-  scheduleFailStateSilentRecovery(domain);
+  lastDetectedFailPlatform = platform || '';
+
+  const isPro = await hasProAccess();
+  await syncProStatusBar();
+
+  const title = isPro
+    ? UI_TEXT.proReadySwitchShop
+    : platform === 'sfcc'
+      ? UI_TEXT.idleHeroTitleNotShopifySfcc
+      : UI_TEXT.idleHeroTitleNotShopify;
+
+  showIdlePrompt({
+    variant: isPro ? 'pro' : 'neutral',
+    title: title,
+    desc: isPro ? UI_TEXT.idleHeroDescPro : UI_TEXT.idleHeroDescNotShopify,
+    domain: domain || '',
+    statusVariant: isPro ? 'success' : 'neutral',
+    silentRecovery: Boolean(domain),
+  });
 }
 
 function clearConfirmedNonShopDomain() {
@@ -2289,7 +2422,7 @@ function scheduleFailStateSilentRecovery(domain) {
   delays.forEach(function (delayMs) {
     setTimeout(function () {
       if (
-        !stateFail.classList.contains('active') ||
+        !isIdleBrowseActive() ||
         lastConfirmedNonShopDomain !== domain
       ) {
         return;
@@ -2524,18 +2657,12 @@ function isExtensionContextInvalidated(err) {
 }
 
 function showExtensionReloadHint() {
-  clearFailStateRetries();
-  stopProductAutoRefresh();
-  hideGrantAccessButton();
-  isProductsLoading = false;
-  setProductsLoading(false);
-  if (failEmojiEl) {
-    failEmojiEl.textContent = '\uD83D\uDD04';
-  }
-  if (failTitleEl) {
-    failTitleEl.textContent = UI_TEXT.extensionReloadHint;
-  }
-  showState('fail');
+  showIdlePrompt({
+    variant: 'reload',
+    title: UI_TEXT.idleHeroTitleReload,
+    desc: UI_TEXT.idleHeroDescReload,
+    statusVariant: 'neutral',
+  });
 }
 
 /** 明显非独立站/电商的域名（跳过长时间检测与 products.json 探测） */
@@ -2652,41 +2779,40 @@ async function pollProActivationAfterPayment(runId, maxWaitMs) {
  * 非店铺页（含 Lemon 支付成功页）的提示，避免对支付页做店铺检测一直转圈
  */
 async function showNonShopBrowseState(domain) {
-  clearFailStateRetries();
-  isProductsLoading = false;
-  setProductsLoading(false);
-  rawProductsForExport = null;
-
   const confirmedPro = await hasProAccess();
   updateProStatusBar(confirmedPro);
 
-  if (confirmedPro) {
-    showState('fail');
-    setProSummaryOnlyMode(true);
-    if (failEmojiEl) {
-      failEmojiEl.textContent = '';
-    }
-    if (failTitleEl) {
-      failTitleEl.textContent = '';
-    }
+  if (isLemonSqueezyHost(domain) && (await isPaymentRecentlyPending())) {
+    showIdlePrompt({
+      variant: 'neutral',
+      title: UI_TEXT.paymentPendingSwitchShop,
+      desc: UI_TEXT.paymentConfirming,
+      domain: domain || '',
+      statusVariant: 'neutral',
+    });
     return;
   }
 
-  setProSummaryOnlyMode(false);
-  showState('fail');
+  if (confirmedPro) {
+    showIdlePrompt({
+      variant: 'pro',
+      title: UI_TEXT.proReadySwitchShop,
+      desc: UI_TEXT.idleHeroDescPro,
+      domain: domain || '',
+      statusVariant: 'success',
+    });
+    return;
+  }
 
-  if (failEmojiEl) {
-    failEmojiEl.textContent = UI_TEXT.failEmoji;
-  }
-  if (failTitleEl) {
-    if (isLemonSqueezyHost(domain) && (await isPaymentRecentlyPending())) {
-      failTitleEl.textContent = UI_TEXT.paymentPendingSwitchShop;
-    } else {
-      failTitleEl.textContent = isLemonSqueezyHost(domain)
-        ? UI_TEXT.paymentPendingSwitchShop
-        : '请打开 Shopify / SFCC 店铺页面';
-    }
-  }
+  showIdlePrompt({
+    variant: 'neutral',
+    title: UI_TEXT.idleHeroTitleReady,
+    desc: isLemonSqueezyHost(domain)
+      ? UI_TEXT.paymentPendingSwitchShop
+      : UI_TEXT.idleHeroDescFree,
+    domain: domain || '',
+    statusVariant: 'neutral',
+  });
 }
 
 /** init 结束仍停在 loading 时兜底（避免并发 init 或异常导致无限转圈） */
@@ -2942,7 +3068,12 @@ function handleInitError(err) {
   }
   console.warn('[ShopRadar] init 异常:', err);
   if (stateLoading.classList.contains('active')) {
-    showState('fail');
+    showIdlePrompt({
+      variant: 'neutral',
+      title: UI_TEXT.idleHeroTitleReady,
+      desc: UI_TEXT.idleHeroDescFree,
+      statusVariant: 'neutral',
+    });
     isProductsLoading = false;
   }
 }
@@ -3064,25 +3195,14 @@ function hideGrantAccessButton() {
  * 缺少站点权限时提示用户点击授权（避免误判为非 Shopify）
  */
 function showPermissionRequiredState() {
-  clearFailStateRetries();
-  stopProductAutoRefresh();
-  isProductsLoading = false;
-  setProductsLoading(false);
-  rawProductsForExport = null;
-  productListEl.innerHTML = '';
-  productsEmpty.classList.remove('visible');
   currentStoreType = 'none';
-  if (failEmojiEl) {
-    failEmojiEl.textContent = '\uD83D\uDD12';
-  }
-  if (failTitleEl) {
-    failTitleEl.textContent = UI_TEXT.needSitePermission;
-  }
-  if (grantAccessBtnEl) {
-    grantAccessBtnEl.textContent = UI_TEXT.grantSiteAccess;
-    grantAccessBtnEl.classList.remove('hidden');
-  }
-  showState('fail');
+  showIdlePrompt({
+    variant: 'permission',
+    title: UI_TEXT.idleHeroTitlePermission,
+    desc: UI_TEXT.idleHeroDescPermission,
+    statusVariant: 'neutral',
+    showGrantAccess: true,
+  });
 }
 
 function bindGrantAccessButton() {
@@ -5230,7 +5350,7 @@ async function init(options) {
     return;
   }
 
-  console.warn('[ShopRadar] 检测未识别 Shopify:', domain, {
+  console.log('[ShopRadar] [Log] 检测未识别 Shopify:', domain, {
     tabId: tab?.id,
     tabUrl: tab?.url,
   });
@@ -5311,7 +5431,7 @@ document.addEventListener('visibilitychange', () => {
   if (
     grantAccessBtnEl &&
     !grantAccessBtnEl.classList.contains('hidden') &&
-    stateFail.classList.contains('active')
+    isIdleBrowseActive()
   ) {
     schedulePanelRefresh({ forceRecheck: true });
   }

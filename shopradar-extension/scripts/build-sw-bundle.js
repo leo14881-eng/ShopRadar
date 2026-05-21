@@ -13,6 +13,7 @@ const ENV_FILE = PRODUCTION_MODE
   ? 'extension-env.production.js'
   : 'extension-env.js';
 const PARTS = [
+  'console-shield.js',
   'extension-config.js',
   ENV_FILE,
   'extension-guard.js',

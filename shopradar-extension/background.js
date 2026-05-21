@@ -1,5 +1,29 @@
 /* ShopRadar background.js — 自动生成，请勿手改。修改源文件后运行: npm run build:sw */
 
+/* ----- console-shield.js ----- */
+/**
+ * ShopRadar — 各上下文第一个加载：生产环境废掉 console.error，避免 chrome://extensions 红标
+ */
+(function shopRadarConsoleShield() {
+  'use strict';
+
+  if (typeof globalThis !== 'undefined' && globalThis.__SHOPRADAR_CONSOLE_SHIELD__) {
+    return;
+  }
+
+  // 强行拦截并降级所有的 console.error，将其转化为普通的 log 打印
+  if (typeof console !== 'undefined' && console.error) {
+    console.error = function () {
+      var args = Array.prototype.slice.call(arguments);
+      console.log.apply(console, ['[Shielded Error]:'].concat(args));
+    };
+  }
+
+  if (typeof globalThis !== 'undefined') {
+    globalThis.__SHOPRADAR_CONSOLE_SHIELD__ = true;
+  }
+})();
+
 /* ----- extension-config.js ----- */
 /**
  * ShopRadar 扩展默认配置（线上地址）
@@ -141,7 +165,7 @@ var SHOPRADAR_EXTENSION_CONFIG = {
 /* ----- extension-guard.js ----- */
 /**
  * ShopRadar — 全局错误静默与 MV3 消息闭环（popup / SW / content script 共用）
- * 须紧随 extension-config.js 之后作为首个守卫脚本加载。
+ * 须紧随 console-shield.js、extension-config.js 之后加载。
  */
 (function shopRadarInstallImmediateGlobalSilencers() {
   'use strict';

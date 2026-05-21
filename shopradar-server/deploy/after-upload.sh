@@ -2,8 +2,10 @@
 # 每次 SFTP 上传后执行一次（自动修 sqlite3 / invalid ELF header）
 set -euo pipefail
 APP_DIR="/root/shopradar-backend/shopradar-server"
+DEPLOY_DIR="$APP_DIR/deploy"
 cd "$APP_DIR"
 chmod +x start.sh
+bash "$DEPLOY_DIR/sync-website.sh"
 pm2 delete shopradar-api 2>/dev/null || true
 pm2 start start.sh --name shopradar-api --interpreter bash --cwd "$APP_DIR"
 pm2 save

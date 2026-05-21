@@ -45,6 +45,7 @@
         "http://127.0.0.1/*"
       ],
       "js": [
+        "console-shield.js",
         "extension-config.js",
         "extension-env.js",
         "extension-guard.js",

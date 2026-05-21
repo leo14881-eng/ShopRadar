@@ -35,9 +35,9 @@ sed -i "s/^[[:space:]]*server_name .*/    server_name $DOMAIN;/" "/etc/nginx/sit
 ln -sf "/etc/nginx/sites-available/$NGINX_SITE" "/etc/nginx/sites-enabled/$NGINX_SITE"
 
 if [[ -d "$WEBSITE_DIR" && -f "$WEBSITE_DIR/index.html" ]]; then
-  echo "==> 配置官网 $WEBSITE_DOMAIN → $WEBSITE_DIR"
+  echo "==> 配置官网 $WEBSITE_DOMAIN → /var/www/shopradar-website"
+  bash "$DEPLOY_DIR/sync-website.sh"
   cp "$DEPLOY_DIR/nginx-shopradar-uk.conf" "/etc/nginx/sites-available/$NGINX_WEBSITE_SITE"
-  sed -i "s|root /root/shopradar-backend/shopradar-website|root $WEBSITE_DIR|" "/etc/nginx/sites-available/$NGINX_WEBSITE_SITE"
   sed -i "s/shopradar.uk www.shopradar.uk/$WEBSITE_DOMAIN www.$WEBSITE_DOMAIN/" "/etc/nginx/sites-available/$NGINX_WEBSITE_SITE"
   ln -sf "/etc/nginx/sites-available/$NGINX_WEBSITE_SITE" "/etc/nginx/sites-enabled/$NGINX_WEBSITE_SITE"
 else

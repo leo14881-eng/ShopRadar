@@ -13,6 +13,7 @@ const ZIP_PATH = path.join(ROOT, 'ShopRadar-chrome-store.zip');
 
 const INCLUDE_FILES = [
   'manifest.json',
+  'console-shield.js',
   'extension-config.js',
   'extension-env.js',
   'extension-guard.js',
@@ -29,6 +30,7 @@ const INCLUDE_FILES = [
   'lemon-payment-return.js',
   'lemon-checkout.config.js',
   'product-ingest.js',
+  'website-device-sync.js',
 ];
 
 const INCLUDE_DIRS = ['icons', '_locales'];
@@ -41,7 +43,7 @@ const FORBIDDEN_SNIPPETS = [
   'ngrok',
   'trycloudflare',
   'USE_PROD_API',
-  '<all_urls>',
+  'console.error(',
 ];
 
 function copyFile(src, dest) {

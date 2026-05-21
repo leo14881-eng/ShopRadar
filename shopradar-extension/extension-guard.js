@@ -1,6 +1,6 @@
 /**
  * ShopRadar — 全局错误静默与 MV3 消息闭环（popup / SW / content script 共用）
- * 须紧随 extension-config.js 之后作为首个守卫脚本加载。
+ * 须紧随 console-shield.js、extension-config.js 之后加载。
  */
 (function shopRadarInstallImmediateGlobalSilencers() {
   'use strict';

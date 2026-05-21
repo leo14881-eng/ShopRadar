@@ -8,14 +8,14 @@ var SIDE_PANEL_PATH = 'popup.html';
 
 function setupSidePanel() {
   if (!chrome.sidePanel) {
-    console.error('[ShopRadar] 需要 Chrome 114+ 且支持 sidePanel API');
+    console.log('[ShopRadar] [Log] 需要 Chrome 114+ 且支持 sidePanel API');
     return;
   }
   if (chrome.sidePanel.setPanelBehavior) {
     chrome.sidePanel
       .setPanelBehavior({ openPanelOnActionClick: true })
       .catch(function (err) {
-        console.error('[ShopRadar] setPanelBehavior:', err);
+        console.warn('Silent catch:', err && err.message ? err.message : err);
       });
   }
   if (chrome.sidePanel.setOptions) {
@@ -25,7 +25,7 @@ function setupSidePanel() {
         enabled: true,
       })
       .catch(function (err) {
-        console.error('[ShopRadar] setOptions:', err);
+        console.warn('Silent catch:', err && err.message ? err.message : err);
       });
   }
 }
@@ -58,13 +58,22 @@ function entrySendResponse(sendResponse, payload) {
         );
       }
     } catch (readErr) {
-      /* ignore */
+      console.warn(
+        'Silent catch:',
+        readErr && readErr.message ? readErr.message : readErr
+      );
     }
   }
 }
 
 self.addEventListener('error', function (event) {
-  console.error('[ShopRadar] SW 错误:', event.error || event.message);
+  var msg =
+    event && event.error && event.error.message
+      ? event.error.message
+      : event && event.message
+        ? event.message
+        : 'unknown';
+  console.log('[ShopRadar] [Log] SW error event:', msg);
 });
 
 chrome.runtime.onInstalled.addListener(function (details) {

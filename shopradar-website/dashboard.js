@@ -330,38 +330,21 @@
     }
   }
 
-  function updateProBadge(pro) {
-    var badge = $('pro-status-badge');
-    if (!badge) {
-      return;
-    }
-    if (pro) {
-      badge.textContent = t('nav.proActive');
-      badge.className =
-        'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25';
-    } else {
-      badge.textContent = t('nav.freePlan');
-      badge.className =
-        'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-500/10 text-gray-400 border border-white/10';
-    }
-  }
-
   function updateNavUpgrade(pro) {
     var navUpgrade = $('nav-upgrade-btn');
     if (!navUpgrade) {
       return;
     }
     if (pro) {
-      navUpgrade.textContent = t('nav.proActiveBtn');
-      navUpgrade.classList.remove('cta-shine');
-      navUpgrade.classList.add('glass', 'text-emerald-400', 'border', 'border-emerald-500/30');
-      navUpgrade.removeAttribute('href');
-      navUpgrade.removeAttribute('target');
-    } else {
-      navUpgrade.textContent = t('nav.upgradePro');
-      navUpgrade.classList.add('cta-shine');
-      navUpgrade.classList.remove('glass', 'text-emerald-400', 'border', 'border-emerald-500/30');
+      navUpgrade.classList.add('hidden');
+      navUpgrade.setAttribute('aria-hidden', 'true');
+      return;
     }
+    navUpgrade.classList.remove('hidden');
+    navUpgrade.removeAttribute('aria-hidden');
+    navUpgrade.textContent = t('nav.upgradePro');
+    navUpgrade.classList.add('cta-shine');
+    navUpgrade.classList.remove('glass', 'text-emerald-400', 'border', 'border-emerald-500/30');
   }
 
   function setPaywallLocked(locked) {
@@ -382,7 +365,6 @@
       lastProExpiresAt = proExpiresAt;
     }
     persistProFlag(pro);
-    updateProBadge(pro);
     updateNavUpgrade(pro);
     setPaywallLocked(!pro);
     loadTrending(getOrCreateDeviceId(), pro);
@@ -656,7 +638,6 @@
       }
       if (opts.preserveOptimistic && loadProFlagFromStorage()) {
         isPro = true;
-        updateProBadge(true);
         updateNavUpgrade(true);
         setPaywallLocked(false);
         return false;
@@ -827,7 +808,6 @@
     window.addEventListener('shopradar:device-synced', onDeviceResynced);
 
     document.addEventListener('shopradar:locale', function () {
-      updateProBadge(isPro);
       updateNavUpgrade(isPro);
       if (!isPro) {
         wireUpgradeButtons(deviceId);
