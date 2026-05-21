@@ -632,15 +632,13 @@ function startServer(db) {
     }
 
     const accessToken = extractAccessTokenFromRequest(req);
+    let tokenValid = null;
     if (accessToken) {
       const check = verifyAccessToken(accessToken, deviceId);
-      if (!check.valid) {
-        return res.status(401).json({
-          isPro: false,
-          deviceId: deviceId,
-          tokenValid: false,
-          msg: '访问令牌无效或已过期',
-        });
+      if (check.valid) {
+        tokenValid = true;
+      } else {
+        tokenValid = false;
       }
     }
 
@@ -652,8 +650,8 @@ function startServer(db) {
       .then(function (row) {
         const isPro = isProRow(row);
         const payload = { isPro: isPro, deviceId: deviceId };
-        if (accessToken) {
-          payload.tokenValid = true;
+        if (tokenValid != null) {
+          payload.tokenValid = tokenValid;
         }
         if (isPro) {
           const enriched = attachAccessTokenToResult(

@@ -10,6 +10,7 @@
     "https://api.shopradar.uk/*",
     "https://*.lemonsqueezy.com/*",
     "https://shopradar.uk/*",
+    "https://www.shopradar.uk/*",
     "http://localhost/*",
     "http://localhost:3000/*",
     "http://127.0.0.1/*",
@@ -39,6 +40,7 @@
     {
       "matches": [
         "https://shopradar.uk/*",
+        "https://www.shopradar.uk/*",
         "http://localhost/*",
         "http://127.0.0.1/*"
       ],

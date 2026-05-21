@@ -143,11 +143,6 @@
       if (!curId && !nextPro) {
         return;
       }
-      // 扩展已有 Pro ID 时，不换成另一个 Pro ID（避免付款 ID 被大盘新 ID 覆盖）
-      if (curId && curId !== deviceId && curPro && nextPro) {
-        deviceId = curId;
-        nextPro = true;
-      }
 
       isPaymentPending(function (paymentPending) {
         var patch = {};

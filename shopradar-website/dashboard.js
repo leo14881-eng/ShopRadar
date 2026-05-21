@@ -81,7 +81,8 @@
     }
   }
 
-  function getOrCreateDeviceId() {
+  function getOrCreateDeviceId(options) {
+    var opts = options || {};
     var fromQuery = readQueryDeviceId();
     if (fromQuery) {
       try {
@@ -99,6 +100,10 @@
       }
     } catch (e) {
       /* ignore */
+    }
+
+    if (opts.allowGenerate === false) {
+      return '';
     }
 
     var deviceId = generateDeviceUuid();
@@ -527,27 +532,30 @@
   }
 
   function fetchProStatus(deviceId) {
-    var url = API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId);
-    var token = getStoredAccessToken();
-    if (token) {
-      url += '&accessToken=' + encodeURIComponent(token);
-    }
-
-    return fetch(url)
-      .then(function (response) {
-        if (!response.ok) {
-          if (response.status === 401) {
-            try {
-              sessionStorage.removeItem(STORAGE_ACCESS_TOKEN);
-              sessionStorage.removeItem(STORAGE_TOKEN_EXPIRES);
-            } catch (e) {
-              /* ignore */
-            }
+    function request(withToken) {
+      var url = API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId);
+      var token = withToken ? getStoredAccessToken() : '';
+      if (token) {
+        url += '&accessToken=' + encodeURIComponent(token);
+      }
+      return fetch(url).then(function (response) {
+        if (response.status === 401 && withToken) {
+          try {
+            sessionStorage.removeItem(STORAGE_ACCESS_TOKEN);
+            sessionStorage.removeItem(STORAGE_TOKEN_EXPIRES);
+          } catch (e) {
+            /* ignore */
           }
+          return request(false);
+        }
+        if (!response.ok) {
           return { isPro: false };
         }
         return response.json();
-      })
+      });
+    }
+
+    return request(true)
       .then(function (data) {
         saveAccessTokenFromPayload(data);
         return Boolean(data && data.isPro);
@@ -710,7 +718,7 @@
         },
         { once: true }
       );
-      setTimeout(finish, 1500);
+      setTimeout(finish, 5000);
     });
   }
 
@@ -721,7 +729,13 @@
   }
 
   function runDashboardInit() {
-    var deviceId = getOrCreateDeviceId();
+    var deviceId = getOrCreateDeviceId({ allowGenerate: false });
+    if (!deviceId) {
+      deviceId = readQueryDeviceId();
+    }
+    if (!deviceId) {
+      deviceId = getOrCreateDeviceId({ allowGenerate: true });
+    }
     showDeviceIdBar(deviceId);
     bindDeviceIdBar();
     wireUpgradeButtons(deviceId);

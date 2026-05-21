@@ -50,10 +50,31 @@
       }
 
       function fetchPro(deviceId) {
-        return fetch(API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId))
-          .then(function (res) { return res.ok ? res.json() : { isPro: false }; })
-          .then(function (data) { return Boolean(data && data.isPro); })
-          .catch(function () { return false; });
+        return fetch(
+          API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId)
+        )
+          .then(function (res) {
+            return res.ok ? res.json() : { isPro: false };
+          })
+          .then(function (data) {
+            if (data && data.accessToken) {
+              try {
+                sessionStorage.setItem('sr_access_token', String(data.accessToken));
+                if (data.tokenExpiresAt) {
+                  sessionStorage.setItem(
+                    'sr_token_expires_at',
+                    String(data.tokenExpiresAt)
+                  );
+                }
+              } catch (tokenErr) {
+                /* ignore */
+              }
+            }
+            return Boolean(data && data.isPro);
+          })
+          .catch(function () {
+            return false;
+          });
       }
 
       async function run() {

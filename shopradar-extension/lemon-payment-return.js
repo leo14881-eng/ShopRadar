@@ -7,6 +7,10 @@ var ShopRadarLemonReturn = (function () {
   var RETURN_TAB_KEY = 'sr_lemon_return_tab_id';
   var RETURN_URL_KEY = 'sr_lemon_return_url';
   var CHECKOUT_TAB_KEY = 'sr_lemon_checkout_tab_id';
+  var STORAGE_DEVICE_ID_KEY = 'sr_device_id';
+  var STORAGE_IS_PRO_KEY = 'sr_is_pro';
+  var STORAGE_ACCESS_TOKEN_KEY = 'sr_access_token';
+  var STORAGE_TOKEN_EXPIRES_KEY = 'sr_token_expires_at';
 
   var backgroundPollTimer = null;
   var backgroundPollActive = false;
@@ -72,6 +76,89 @@ var ShopRadarLemonReturn = (function () {
     });
   }
 
+  async function getSessionAccessToken() {
+    if (!chrome.storage || !chrome.storage.session) {
+      return '';
+    }
+    try {
+      var stored = await chrome.storage.session.get([
+        STORAGE_ACCESS_TOKEN_KEY,
+        STORAGE_TOKEN_EXPIRES_KEY,
+      ]);
+      var token = stored[STORAGE_ACCESS_TOKEN_KEY];
+      var expiresAt = Number(stored[STORAGE_TOKEN_EXPIRES_KEY] || 0);
+      if (!token) {
+        return '';
+      }
+      if (expiresAt && expiresAt < Date.now()) {
+        await chrome.storage.session.remove([
+          STORAGE_ACCESS_TOKEN_KEY,
+          STORAGE_TOKEN_EXPIRES_KEY,
+        ]);
+        return '';
+      }
+      return String(token);
+    } catch (tokenErr) {
+      return '';
+    }
+  }
+
+  async function saveProPayloadFromServer(data) {
+    if (!data) {
+      return false;
+    }
+    if (data.accessToken && chrome.storage && chrome.storage.session) {
+      var expiresAt =
+        data.tokenExpiresAt != null
+          ? Number(data.tokenExpiresAt)
+          : data.tokenExpiresIn != null
+            ? Date.now() + Number(data.tokenExpiresIn) * 1000
+            : 0;
+      try {
+        var sessionPatch = {};
+        sessionPatch[STORAGE_ACCESS_TOKEN_KEY] = String(data.accessToken);
+        if (expiresAt) {
+          sessionPatch[STORAGE_TOKEN_EXPIRES_KEY] = expiresAt;
+        }
+        await chrome.storage.session.set(sessionPatch);
+      } catch (sessionErr) {
+        /* ignore */
+      }
+    }
+    if (data.isPro && chrome.storage && chrome.storage.local) {
+      try {
+        await chrome.storage.local.set({ [STORAGE_IS_PRO_KEY]: true });
+      } catch (persistErr) {
+        /* ignore */
+      }
+      return true;
+    }
+    return Boolean(data.isPro);
+  }
+
+  async function fetchProStatusOnce(deviceId, accessToken) {
+    var url =
+      getApiBase() +
+      '/api/pro-status?deviceId=' +
+      encodeURIComponent(String(deviceId));
+    if (accessToken) {
+      url += '&accessToken=' + encodeURIComponent(String(accessToken));
+    }
+    var response = await fetch(url);
+    if (response.status === 401 && accessToken) {
+      response = await fetch(
+        getApiBase() +
+          '/api/pro-status?deviceId=' +
+          encodeURIComponent(String(deviceId))
+      );
+    }
+    if (!response.ok) {
+      return false;
+    }
+    var data = await response.json();
+    return saveProPayloadFromServer(data);
+  }
+
   async function saveReturnContext(tabId, url) {
     if (!chrome.storage || !chrome.storage.session || tabId == null) {
       return;
@@ -117,33 +204,13 @@ var ShopRadarLemonReturn = (function () {
       return false;
     }
     try {
-      var stored = await chrome.storage.local.get(['sr_device_id', 'sr_access_token']);
-      var deviceId = stored.sr_device_id;
+      var stored = await chrome.storage.local.get([STORAGE_DEVICE_ID_KEY]);
+      var deviceId = stored[STORAGE_DEVICE_ID_KEY];
       if (!deviceId) {
         return false;
       }
-      var url =
-        getApiBase() +
-        '/api/pro-status?deviceId=' +
-        encodeURIComponent(String(deviceId));
-      if (stored.sr_access_token) {
-        url +=
-          '&accessToken=' + encodeURIComponent(String(stored.sr_access_token));
-      }
-      var response = await fetch(url);
-      if (!response.ok) {
-        return false;
-      }
-      var data = await response.json();
-      var isPro = Boolean(data && data.isPro);
-      if (isPro && chrome.storage && chrome.storage.local) {
-        try {
-          await chrome.storage.local.set({ sr_is_pro: true });
-        } catch (persistErr) {
-          /* ignore */
-        }
-      }
-      return isPro;
+      var accessToken = await getSessionAccessToken();
+      return await fetchProStatusOnce(deviceId, accessToken);
     } catch (err) {
       return false;
     }
