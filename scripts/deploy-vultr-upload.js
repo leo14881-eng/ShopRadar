@@ -2,6 +2,15 @@
 
 const fs = require('fs');
 const path = require('path');
+const util = require('util');
+
+// Node 22+ removed util.isDate; SFTP extension bundles ssh2@1.13 which still uses it.
+if (typeof util.isDate !== 'function') {
+  util.isDate = function isDate(v) {
+    return v instanceof Date;
+  };
+}
+
 const { Client } = require(process.argv[4]);
 
 const cfgPath = process.argv[2];
