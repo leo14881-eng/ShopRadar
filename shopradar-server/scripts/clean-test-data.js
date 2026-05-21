@@ -147,11 +147,24 @@ async function main() {
     );
     await dbRun(
       db,
+      'DELETE FROM daily_product_devices WHERE product_key IN (' + placeholders + ')',
+      keyList
+    );
+    await dbRun(
+      db,
       'DELETE FROM product_catalog WHERE product_key IN (' + placeholders + ')',
       keyList
     );
   }
 
+  await dbRun(
+    db,
+    "DELETE FROM daily_store_devices WHERE device_id LIKE 'seed-%' OR device_id LIKE 'flow-%' OR device_id LIKE 'qa-%'"
+  );
+  await dbRun(
+    db,
+    "DELETE FROM daily_product_devices WHERE device_id LIKE 'seed-%' OR device_id LIKE 'flow-%' OR device_id LIKE 'legacy:%'"
+  );
   await dbRun(db, 'DELETE FROM ingest_log WHERE ' + ingestWhere);
   await dbRun(db, 'DELETE FROM users WHERE ' + userWhere);
   await dbRun(db, 'DELETE FROM pending_pro_claims WHERE ' + pendingWhere);

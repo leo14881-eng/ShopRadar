@@ -335,16 +335,41 @@
     if (!navUpgrade) {
       return;
     }
-    if (pro) {
-      navUpgrade.classList.add('hidden');
-      navUpgrade.setAttribute('aria-hidden', 'true');
-      return;
-    }
     navUpgrade.classList.remove('hidden');
     navUpgrade.removeAttribute('aria-hidden');
+
+    if (pro) {
+      navUpgrade.removeAttribute('href');
+      navUpgrade.classList.remove(
+        'js-upgrade-pro',
+        'cta-shine',
+        'text-radar-950',
+        'hover:opacity-90',
+        'transition-opacity'
+      );
+      navUpgrade.classList.add('pro-active-badge');
+      navUpgrade.setAttribute('role', 'status');
+      navUpgrade.setAttribute('aria-label', t('nav.proActive'));
+      navUpgrade.innerHTML =
+        '<span class="pro-pulse-dot" aria-hidden="true"></span>' +
+        '<span class="pro-active-label">' +
+        escapeHtml(t('nav.proActiveBtn')) +
+        '</span>';
+      return;
+    }
+
+    navUpgrade.setAttribute('href', '#');
+    navUpgrade.classList.add(
+      'js-upgrade-pro',
+      'cta-shine',
+      'text-radar-950',
+      'hover:opacity-90',
+      'transition-opacity'
+    );
+    navUpgrade.classList.remove('pro-active-badge');
+    navUpgrade.removeAttribute('role');
+    navUpgrade.removeAttribute('aria-label');
     navUpgrade.textContent = t('nav.upgradePro');
-    navUpgrade.classList.add('cta-shine');
-    navUpgrade.classList.remove('glass', 'text-emerald-400', 'border', 'border-emerald-500/30');
   }
 
   function setPaywallLocked(locked) {
@@ -432,7 +457,7 @@
   function lockedCell(text, hint) {
     var label = escapeHtml(String(text || hint || '—'));
     return (
-      '<td class="px-6 py-4 text-gray-500 italic text-xs" title="' +
+      '<td class="px-6 py-4 text-muted italic text-xs" title="' +
       escapeHtml(String(hint || '')) +
       '">' +
       label +
@@ -518,7 +543,7 @@
             renderProductThumb(item.imageUrl, item.title) +
             '<div>' +
               '<div class="font-medium text-gray-200">' + escapeHtml(item.title) + '</div>' +
-              '<div class="text-xs text-gray-500">' +
+              '<div class="text-xs text-muted">' +
               escapeHtml(t('misc.sku')) +
               ': ' +
               escapeHtml(item.sku || '—') +

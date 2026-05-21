@@ -1,0 +1,98 @@
+/**
+ * ShopRadar website — dark theme contrast & Pro badge
+ * Rule: never use #000 / #333 / low-contrast gray on dark backgrounds.
+ */
+:root {
+  --sr-text-primary: #ffffff;
+  --sr-text-secondary: #e5e7eb;
+  --sr-text-muted: #9ca3af;
+  --sr-pro-emerald: #10b981;
+  --sr-pro-emerald-light: #34d399;
+  --sr-pro-emerald-bg: rgba(16, 185, 129, 0.1);
+}
+
+.text-muted {
+  color: var(--sr-text-muted) !important;
+}
+
+.text-subtle {
+  color: var(--sr-text-secondary) !important;
+}
+
+/* Pro active — top-right nav badge */
+.pro-active-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid #10b981;
+  color: #10b981;
+  cursor: default;
+  pointer-events: none;
+  text-decoration: none;
+  animation: pro-badge-breathe 3s ease-in-out infinite;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.14);
+}
+
+.pro-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  flex-shrink: 0;
+  animation: pro-dot-pulse 2s ease-in-out infinite;
+}
+
+.pro-active-label {
+  color: #10b981;
+  letter-spacing: 0.02em;
+}
+
+@keyframes pro-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.88;
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+    transform: scale(1.1);
+  }
+}
+
+@keyframes pro-badge-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.14);
+    border-color: #10b981;
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.32);
+    border-color: #34d399;
+  }
+}
+
+/* Dark backgrounds — lift Tailwind low-contrast grays site-wide */
+body.bg-radar-950 .text-gray-500,
+body.bg-radar-950 .text-gray-600,
+body.bg-gray-950 .text-gray-500,
+body.bg-gray-950 .text-gray-600 {
+  color: var(--sr-text-muted) !important;
+}
+
+body.bg-radar-950 .text-gray-400,
+body.bg-gray-950 .text-gray-400 {
+  color: #d1d5db !important;
+}
+
+body.bg-radar-950 .placeholder-gray-600::placeholder,
+body.bg-gray-950 .placeholder-gray-600::placeholder {
+  color: #6b7280 !important;
+}

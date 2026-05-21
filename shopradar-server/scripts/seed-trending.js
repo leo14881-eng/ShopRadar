@@ -137,6 +137,17 @@ async function bumpDailyStats(db) {
       const date = new Date();
       date.setDate(date.getDate() - offset);
       const statDate = date.toISOString().slice(0, 10);
+      const deviceId = 'seed:' + productKey + ':d' + offset;
+
+      await dbRun(
+        db,
+        `
+        INSERT OR IGNORE INTO daily_product_devices (product_key, stat_date, device_id)
+        VALUES (?, ?, ?)
+      `,
+        [productKey, statDate, deviceId]
+      );
+
       await dbRun(
         db,
         `
@@ -145,7 +156,7 @@ async function bumpDailyStats(db) {
         ON CONFLICT(product_key, stat_date) DO UPDATE SET
           sighting_count = MAX(sighting_count, excluded.sighting_count)
       `,
-        [productKey, statDate, weights[offset]]
+        [productKey, statDate, 1]
       );
     }
   }

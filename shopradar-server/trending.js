@@ -5,8 +5,52 @@ const { invalidateTrendingCache } = require('./redis-client');
 
 const MAX_INGEST_PRODUCTS = 50;
 const MAX_INGEST_PER_DEVICE_DAY = 40;
+/** 展示层：同一店铺在 Top N 中最多出现几条 */
+const MAX_ITEMS_PER_STORE = 2;
+/** 多样性截断前先多拉候选行 */
+const TRENDING_FETCH_MULTIPLIER = 5;
 
 const AD_SIGNALS = ['Meta Active', 'TikTok Viral', 'Google Ads'];
+
+const TRENDING_RANK_SQL = `
+    SELECT
+      pc.product_key,
+      pc.store_domain,
+      pc.title,
+      pc.sku,
+      pc.category,
+      pc.image_url,
+      pc.price,
+      pc.currency,
+      pc.total_sightings,
+      COALESCE(today_stats.today_devices, 0) AS today_count,
+      COALESCE(week_stats.week_total, 0) AS week_total,
+      COALESCE(prev_week_stats.prev_week_total, 0) AS prev_week_total
+    FROM product_catalog pc
+    LEFT JOIN (
+      SELECT product_key, COUNT(DISTINCT device_id) AS today_devices
+      FROM daily_product_devices
+      WHERE stat_date = ?
+      GROUP BY product_key
+    ) today_stats ON today_stats.product_key = pc.product_key
+    LEFT JOIN (
+      SELECT product_key, COUNT(DISTINCT device_id) AS week_total
+      FROM daily_product_devices
+      WHERE stat_date >= date(?, '-6 day') AND stat_date <= ?
+      GROUP BY product_key
+    ) week_stats ON week_stats.product_key = pc.product_key
+    LEFT JOIN (
+      SELECT product_key, COUNT(DISTINCT device_id) AS prev_week_total
+      FROM daily_product_devices
+      WHERE stat_date >= date(?, '-13 day') AND stat_date < date(?, '-6 day')
+      GROUP BY product_key
+    ) prev_week_stats ON prev_week_stats.product_key = pc.product_key
+    WHERE COALESCE(today_stats.today_devices, 0) + COALESCE(week_stats.week_total, 0) > 0
+    ORDER BY
+      (COALESCE(today_stats.today_devices, 0) * 100 + COALESCE(week_stats.week_total, 0)) DESC,
+      pc.last_seen_at DESC
+    LIMIT ?
+  `;
 
 function normalizeDomain(domain) {
   return String(domain || '')
@@ -154,6 +198,102 @@ async function migrateTrendingTables(db) {
     db,
     'CREATE INDEX IF NOT EXISTS idx_ingest_log_device_date ON ingest_log(device_id, ingested_at)'
   );
+
+  await dbRun(
+    db,
+    `
+    CREATE TABLE IF NOT EXISTS daily_store_devices (
+      store_domain TEXT NOT NULL,
+      stat_date TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      PRIMARY KEY (store_domain, stat_date, device_id)
+    );
+  `
+  );
+
+  await dbRun(
+    db,
+    `
+    CREATE TABLE IF NOT EXISTS daily_product_devices (
+      product_key TEXT NOT NULL,
+      stat_date TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      PRIMARY KEY (product_key, stat_date, device_id)
+    );
+  `
+  );
+
+  await dbRun(
+    db,
+    'CREATE INDEX IF NOT EXISTS idx_daily_product_devices_date ON daily_product_devices(stat_date)'
+  );
+  await dbRun(
+    db,
+    'CREATE INDEX IF NOT EXISTS idx_daily_store_devices_date ON daily_store_devices(stat_date)'
+  );
+  await dbRun(
+    db,
+    'CREATE INDEX IF NOT EXISTS idx_daily_product_devices_key ON daily_product_devices(product_key)'
+  );
+
+  await backfillTrendingDeviceTables(db);
+}
+
+/**
+ * 一次性：旧 sighting_count 数据 → 每商品每天最多 1 个 legacy device（避免历史刷量）
+ * @param {import('sqlite3').Database} db
+ */
+async function backfillTrendingDeviceTables(db) {
+  const row = await dbGet(
+    db,
+    'SELECT COUNT(*) AS cnt FROM daily_product_devices'
+  );
+  if (Number(row && row.cnt ? row.cnt : 0) > 0) {
+    return;
+  }
+
+  const stats = await dbAll(
+    db,
+    `
+    SELECT product_key, stat_date
+    FROM daily_product_stats
+    WHERE sighting_count > 0
+  `
+  );
+
+  for (let i = 0; i < stats.length; i++) {
+    const stat = stats[i];
+    await dbRun(
+      db,
+      `
+      INSERT OR IGNORE INTO daily_product_devices (product_key, stat_date, device_id)
+      VALUES (?, ?, ?)
+    `,
+      [
+        stat.product_key,
+        stat.stat_date,
+        'legacy:' + stat.product_key + ':' + stat.stat_date,
+      ]
+    );
+  }
+
+  const ingests = await dbAll(
+    db,
+    `
+    SELECT DISTINCT device_id, store_domain, substr(ingested_at, 1, 10) AS stat_date
+    FROM ingest_log
+  `
+  );
+
+  for (let j = 0; j < ingests.length; j++) {
+    const ing = ingests[j];
+    await markStoreScoredToday(
+      db,
+      normalizeDomain(ing.store_domain),
+      ing.stat_date,
+      ing.device_id
+    );
+  }
 }
 
 /**
@@ -182,6 +322,129 @@ async function getStoresTrackedCount(db) {
     'SELECT COUNT(DISTINCT store_domain) AS cnt FROM product_catalog'
   );
   return Number(row && row.cnt ? row.cnt : 0);
+}
+
+/**
+ * @param {import('sqlite3').Database} db
+ */
+async function hasStoreScoredToday(db, deviceId, storeDomain, statDate) {
+  const row = await dbGet(
+    db,
+    `
+    SELECT 1 AS hit
+    FROM daily_store_devices
+    WHERE store_domain = ? AND stat_date = ? AND device_id = ?
+  `,
+    [storeDomain, statDate, deviceId]
+  );
+  return Boolean(row && row.hit);
+}
+
+/**
+ * @param {import('sqlite3').Database} db
+ * @returns {Promise<boolean>} true when this device is newly counted for the product today
+ */
+function recordUniqueProductDevice(db, productKey, statDate, deviceId) {
+  return new Promise(function (resolve, reject) {
+    db.run(
+      `
+      INSERT OR IGNORE INTO daily_product_devices (product_key, stat_date, device_id)
+      VALUES (?, ?, ?)
+    `,
+      [productKey, statDate, deviceId],
+      function (err) {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(this.changes > 0);
+      }
+    );
+  });
+}
+
+/**
+ * @param {import('sqlite3').Database} db
+ */
+async function bumpDailyProductStat(db, productKey, statDate) {
+  const dailyRow = await dbGet(
+    db,
+    'SELECT sighting_count FROM daily_product_stats WHERE product_key = ? AND stat_date = ?',
+    [productKey, statDate]
+  );
+
+  if (dailyRow) {
+    await dbRun(
+      db,
+      'UPDATE daily_product_stats SET sighting_count = sighting_count + 1 WHERE product_key = ? AND stat_date = ?',
+      [productKey, statDate]
+    );
+    return;
+  }
+
+  await dbRun(
+    db,
+    'INSERT INTO daily_product_stats (product_key, stat_date, sighting_count) VALUES (?, ?, 1)',
+    [productKey, statDate]
+  );
+}
+
+/**
+ * @param {import('sqlite3').Database} db
+ */
+async function markStoreScoredToday(db, storeDomain, statDate, deviceId) {
+  await dbRun(
+    db,
+    `
+    INSERT OR IGNORE INTO daily_store_devices (store_domain, stat_date, device_id)
+    VALUES (?, ?, ?)
+  `,
+    [storeDomain, statDate, deviceId]
+  );
+}
+
+/**
+ * 展示层：Top N 每店最多 MAX_ITEMS_PER_STORE 条
+ * @param {Array<object>} items
+ * @param {number} limit
+ */
+function applyStoreDiversityCap(items, limit) {
+  const cap = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const out = [];
+  const perStore = Object.create(null);
+
+  for (let i = 0; i < items.length && out.length < cap; i++) {
+    const item = items[i];
+    const store = normalizeDomain(item.shop_domain || item.sourceStore || '');
+    const used = perStore[store] || 0;
+    if (used >= MAX_ITEMS_PER_STORE) {
+      continue;
+    }
+    perStore[store] = used + 1;
+    out.push(item);
+  }
+
+  return out.map(function (item, index) {
+    const next = Object.assign({}, item);
+    next.rank = index + 1;
+    return next;
+  });
+}
+
+/**
+ * @param {import('sqlite3').Database} db
+ * @param {string} today
+ * @param {number} fetchLimit
+ */
+async function fetchTrendingRankedRows(db, today, fetchLimit) {
+  return dbAll(db, TRENDING_RANK_SQL, [
+    today,
+    today,
+    today,
+    today,
+    today,
+    fetchLimit,
+  ]);
 }
 
 /**
@@ -215,7 +478,9 @@ async function ingestProducts(db, deviceId, domain, storeType, currency, product
 
   const nowIso = new Date().toISOString();
   const today = getTodayDateString();
+  const scoreHeat = !(await hasStoreScoredToday(db, deviceId, storeDomain, today));
   let ingested = 0;
+  let heatRecorded = 0;
 
   for (let i = 0; i < list.length; i++) {
     const item = list[i] || {};
@@ -248,7 +513,7 @@ async function ingestProducts(db, deviceId, domain, storeType, currency, product
         `
         UPDATE product_catalog
         SET title = ?, sku = ?, category = ?, image_url = COALESCE(NULLIF(?, ''), image_url), price = ?, currency = ?,
-            vendor = ?, last_seen_at = ?, total_sightings = total_sightings + 1
+            vendor = ?, last_seen_at = ?
         WHERE product_key = ?
       `,
         [
@@ -270,7 +535,7 @@ async function ingestProducts(db, deviceId, domain, storeType, currency, product
         INSERT INTO product_catalog (
           product_key, store_domain, title, sku, category, image_url, price, currency,
           vendor, first_seen_at, last_seen_at, total_sightings
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
       `,
         [
           productKey,
@@ -288,27 +553,24 @@ async function ingestProducts(db, deviceId, domain, storeType, currency, product
       );
     }
 
-    const dailyRow = await dbGet(
-      db,
-      'SELECT sighting_count FROM daily_product_stats WHERE product_key = ? AND stat_date = ?',
-      [productKey, today]
-    );
-
-    if (dailyRow) {
-      await dbRun(
-        db,
-        'UPDATE daily_product_stats SET sighting_count = sighting_count + 1 WHERE product_key = ? AND stat_date = ?',
-        [productKey, today]
-      );
-    } else {
-      await dbRun(
-        db,
-        'INSERT INTO daily_product_stats (product_key, stat_date, sighting_count) VALUES (?, ?, 1)',
-        [productKey, today]
-      );
+    if (scoreHeat) {
+      const added = await recordUniqueProductDevice(db, productKey, today, deviceId);
+      if (added) {
+        await bumpDailyProductStat(db, productKey, today);
+        await dbRun(
+          db,
+          'UPDATE product_catalog SET total_sightings = total_sightings + 1 WHERE product_key = ?',
+          [productKey]
+        );
+        heatRecorded += 1;
+      }
     }
 
     ingested += 1;
+  }
+
+  if (scoreHeat && ingested > 0) {
+    await markStoreScoredToday(db, storeDomain, today, deviceId);
   }
 
   await dbRun(
@@ -322,6 +584,8 @@ async function ingestProducts(db, deviceId, domain, storeType, currency, product
   return {
     ok: true,
     ingested: ingested,
+    heat_scored: scoreHeat,
+    heat_recorded: heatRecorded,
     storeDomain: storeDomain,
     storeType: storeType || 'shopify',
   };
@@ -336,12 +600,14 @@ function computeGrowth7d(todayCount, weekTotal, prevWeekTotal) {
   return (current - previous) / previous;
 }
 
-function estimateDailyRev(price, todayCount, totalSightings) {
+function estimateDailyRev(price, todayUniqueDevices, weekUniqueDevices) {
   const unit = Number(price || 0);
+  const todayDevices = Number(todayUniqueDevices || 0);
+  const weekDevices = Number(weekUniqueDevices || 0);
   if (unit <= 0) {
-    return roundMoney((Number(todayCount || 0) + 1) * 42.5);
+    return roundMoney((todayDevices + 1) * 42.5);
   }
-  const velocity = Number(todayCount || 0) * 18 + Number(totalSightings || 0) * 0.35;
+  const velocity = todayDevices * 18 + weekDevices * 0.35;
   return roundMoney(unit * Math.max(velocity, 12));
 }
 
@@ -367,7 +633,7 @@ function mapGoldenRow(row, index) {
     est_daily_rev: estimateDailyRev(
       row.price,
       row.today_count,
-      row.total_sightings
+      row.week_total
     ),
     growth_7d: growthPct,
     shop_domain: row.store_domain,
@@ -407,48 +673,11 @@ function tierGoldenItem(item, isPro, locale) {
 async function queryTrendingGolden(db, opts) {
   const limit = Math.min(Math.max(Number(opts && opts.limit) || 100, 1), 100);
   const today = getTodayDateString();
+  const fetchLimit = Math.min(limit * TRENDING_FETCH_MULTIPLIER, 500);
 
-  const rows = await dbAll(
-    db,
-    `
-    SELECT
-      pc.product_key,
-      pc.store_domain,
-      pc.title,
-      pc.sku,
-      pc.category,
-      pc.image_url,
-      pc.price,
-      pc.currency,
-      pc.total_sightings,
-      COALESCE(today_stats.sighting_count, 0) AS today_count,
-      COALESCE(week_stats.week_total, 0) AS week_total,
-      COALESCE(prev_week_stats.prev_week_total, 0) AS prev_week_total
-    FROM product_catalog pc
-    LEFT JOIN daily_product_stats today_stats
-      ON today_stats.product_key = pc.product_key AND today_stats.stat_date = ?
-    LEFT JOIN (
-      SELECT product_key, SUM(sighting_count) AS week_total
-      FROM daily_product_stats
-      WHERE stat_date >= date(?, '-6 day') AND stat_date <= ?
-      GROUP BY product_key
-    ) week_stats ON week_stats.product_key = pc.product_key
-    LEFT JOIN (
-      SELECT product_key, SUM(sighting_count) AS prev_week_total
-      FROM daily_product_stats
-      WHERE stat_date >= date(?, '-13 day') AND stat_date < date(?, '-6 day')
-      GROUP BY product_key
-    ) prev_week_stats ON prev_week_stats.product_key = pc.product_key
-    ORDER BY
-      (COALESCE(today_stats.sighting_count, 0) * 100 + COALESCE(week_stats.week_total, 0)) DESC,
-      pc.last_seen_at DESC
-    LIMIT ?
-  `,
-    [today, today, today, today, today, limit]
-  );
-
+  const rows = await fetchTrendingRankedRows(db, today, fetchLimit);
   const storesTracked = await getStoresTrackedCount(db);
-  const items = rows.map(mapGoldenRow);
+  const items = applyStoreDiversityCap(rows.map(mapGoldenRow), limit);
   const nowUtc = new Date().toISOString();
 
   return {
@@ -518,69 +747,37 @@ async function queryTrending(db, opts) {
   const limit = Math.min(Math.max(Number(opts && opts.limit) || 20, 1), 100);
   const isPro = Boolean(opts && opts.isPro);
   const today = getTodayDateString();
+  const fetchLimit = Math.min(limit * TRENDING_FETCH_MULTIPLIER, 500);
 
-  const rows = await dbAll(
-    db,
-    `
-    SELECT
-      pc.product_key,
-      pc.store_domain,
-      pc.title,
-      pc.sku,
-      pc.category,
-      pc.image_url,
-      pc.price,
-      pc.currency,
-      pc.total_sightings,
-      COALESCE(today_stats.sighting_count, 0) AS today_count,
-      COALESCE(week_stats.week_total, 0) AS week_total,
-      COALESCE(prev_week_stats.prev_week_total, 0) AS prev_week_total
-    FROM product_catalog pc
-    LEFT JOIN daily_product_stats today_stats
-      ON today_stats.product_key = pc.product_key AND today_stats.stat_date = ?
-    LEFT JOIN (
-      SELECT product_key, SUM(sighting_count) AS week_total
-      FROM daily_product_stats
-      WHERE stat_date >= date(?, '-6 day') AND stat_date <= ?
-      GROUP BY product_key
-    ) week_stats ON week_stats.product_key = pc.product_key
-    LEFT JOIN (
-      SELECT product_key, SUM(sighting_count) AS prev_week_total
-      FROM daily_product_stats
-      WHERE stat_date >= date(?, '-13 day') AND stat_date < date(?, '-6 day')
-      GROUP BY product_key
-    ) prev_week_stats ON prev_week_stats.product_key = pc.product_key
-    ORDER BY
-      (COALESCE(today_stats.sighting_count, 0) * 100 + COALESCE(week_stats.week_total, 0)) DESC,
-      pc.last_seen_at DESC
-    LIMIT ?
-  `,
-    [today, today, today, today, today, limit]
-  );
-
+  const rows = await fetchTrendingRankedRows(db, today, fetchLimit);
   const storesTracked = await getStoresTrackedCount(db);
 
-  const items = rows.map(function (row, index) {
-    const growthRatio = computeGrowth7d(
-      row.today_count,
-      row.week_total,
-      row.prev_week_total
-    );
-    const growthPct = Math.round(growthRatio * 100);
+  const ranked = applyStoreDiversityCap(
+    rows.map(function (row, index) {
+      const growthRatio = computeGrowth7d(
+        row.today_count,
+        row.week_total,
+        row.prev_week_total
+      );
+      const growthPct = Math.round(growthRatio * 100);
 
-    const fullItem = {
-      rank: index + 1,
-      title: row.title,
-      sku: row.sku || '',
-      category: row.category || 'General',
-      estDailyRev: estimateDailyRev(row.price, row.today_count, row.total_sightings),
-      growth7d: growthPct,
-      sourceStore: row.store_domain,
-      adSignal: pickAdSignal(row.product_key),
-      imageUrl: row.image_url || '',
-    };
+      return {
+        rank: index + 1,
+        title: row.title,
+        sku: row.sku || '',
+        category: row.category || 'General',
+        estDailyRev: estimateDailyRev(row.price, row.today_count, row.week_total),
+        growth7d: growthPct,
+        sourceStore: row.store_domain,
+        adSignal: pickAdSignal(row.product_key),
+        imageUrl: row.image_url || '',
+      };
+    }),
+    limit
+  );
 
-    return redactTrendingItem(fullItem, isPro);
+  const items = ranked.map(function (item) {
+    return redactTrendingItem(item, isPro);
   });
 
   return {
@@ -600,5 +797,7 @@ module.exports = {
   queryTrendingGolden,
   tierTrendingForViewer,
   getStoresTrackedCount,
+  applyStoreDiversityCap,
   MAX_INGEST_PRODUCTS,
+  MAX_ITEMS_PER_STORE,
 };

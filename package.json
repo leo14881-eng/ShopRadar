@@ -12,6 +12,7 @@
     "verify": "npm run verify --prefix shopradar-extension",
     "check": "npm run check --prefix shopradar-extension",
     "check:extension": "npm run check:extension --prefix shopradar-extension",
-    "package:store": "npm run package:store --prefix shopradar-extension"
+    "package:store": "npm run package:store --prefix shopradar-extension",
+    "deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy-vultr.ps1"
   }
 }
