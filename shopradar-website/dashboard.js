@@ -21,17 +21,27 @@
   var isPro = false;
   var lastProExpiresAt = '';
   var pollTimer = null;
-  var leaderboardFetchGen = 0;
+  var trendingFetchGen = 0;
+  var famousStoresFetchGen = 0;
   var extensionSyncBound = false;
   var lastKnownExtDeviceId = '';
 
-  function bumpLeaderboardFetchGen() {
-    leaderboardFetchGen += 1;
-    return leaderboardFetchGen;
+  function bumpTrendingFetchGen() {
+    trendingFetchGen += 1;
+    return trendingFetchGen;
   }
 
-  function isLeaderboardFetchStale(gen) {
-    return gen !== leaderboardFetchGen;
+  function isTrendingFetchStale(gen) {
+    return gen !== trendingFetchGen;
+  }
+
+  function bumpFamousStoresFetchGen() {
+    famousStoresFetchGen += 1;
+    return famousStoresFetchGen;
+  }
+
+  function isFamousStoresFetchStale(gen) {
+    return gen !== famousStoresFetchGen;
   }
 
   function getI18n() {
@@ -822,14 +832,14 @@
   }
 
   function loadFamousStores(deviceId, pro) {
-    var fetchGen = bumpLeaderboardFetchGen();
+    var fetchGen = bumpFamousStoresFetchGen();
     var loadingEl = $('famous-stores-loading');
     if (loadingEl) {
       loadingEl.classList.remove('hidden');
     }
 
     return fetchFamousStores(deviceId).then(function (payload) {
-      if (isLeaderboardFetchStale(fetchGen)) {
+      if (isFamousStoresFetchStale(fetchGen)) {
         return payload;
       }
       updateFamousStoresMeta(payload);
@@ -873,14 +883,14 @@
   }
 
   function loadTrending(deviceId, pro) {
-    var fetchGen = bumpLeaderboardFetchGen();
+    var fetchGen = bumpTrendingFetchGen();
     var loadingEl = $('trending-loading');
     if (loadingEl) {
       loadingEl.classList.remove('hidden');
     }
 
     return fetchTrending(deviceId).then(function (payload) {
-      if (isLeaderboardFetchStale(fetchGen)) {
+      if (isTrendingFetchStale(fetchGen)) {
         return payload;
       }
       updateTrendingMeta(payload);
