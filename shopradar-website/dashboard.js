@@ -190,7 +190,8 @@
     }
 
     var successPath = CFG.paymentSuccessPath || '/success.html';
-    var websiteUrl = String(CFG.websiteUrl || window.location.origin).replace(/\/$/, '');
+    var websiteUrl = String(window.location.origin || CFG.websiteUrl || '')
+      .replace(/\/$/, '');
     var redirectUrl = websiteUrl + successPath;
 
     try {
@@ -854,7 +855,10 @@
         applyProState(true, status.proExpiresAt);
         return true;
       }
-      if (opts.preserveOptimistic && loadProFlagFromStorage()) {
+      if (
+        opts.preserveOptimistic &&
+        (loadProFlagFromStorage() || opts.paymentPending)
+      ) {
         isPro = true;
         updateNavUpgrade(true);
         setPaywallLocked(false);
@@ -900,11 +904,13 @@
     }
 
     var deadline = Date.now() + 28000;
+    var wasPaymentPending = true;
 
     function tick() {
       if (Date.now() >= deadline) {
         refreshProStatus(deviceId, {
-          preserveOptimistic: loadProFlagFromStorage() || shouldPollAfterPayment(),
+          preserveOptimistic: loadProFlagFromStorage() || wasPaymentPending,
+          paymentPending: wasPaymentPending,
         }).catch(function () {});
         return;
       }
@@ -1054,6 +1060,7 @@
 
     refreshProStatus(deviceId, {
       preserveOptimistic: optimisticPro || paymentPending,
+      paymentPending: paymentPending,
     }).then(function (pro) {
       if (!pro && paymentPending) {
         pollProAfterPayment(deviceId);

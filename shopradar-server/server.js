@@ -196,7 +196,10 @@ function isProRow(row) {
   }
   if (row.pro_expires_at) {
     const expiresMs = new Date(row.pro_expires_at).getTime();
-    if (expiresMs && Date.now() > expiresMs) {
+    if (Number.isNaN(expiresMs)) {
+      return false;
+    }
+    if (Date.now() > expiresMs) {
       return false;
     }
   }
@@ -297,6 +300,36 @@ async function handleCheckLimitFromSession(db, req, deviceId, domain) {
       remaining: 0,
       msg: LIMIT_EXCEEDED_MSG,
       domain: domain,
+    };
+  }
+
+  if (!row) {
+    await dbRun(
+      db,
+      'INSERT INTO users (device_id, count, last_query_date, is_pro) VALUES (?, 1, ?, 0)',
+      [deviceId, today]
+    );
+    return {
+      allowed: true,
+      remaining: FREE_DAILY_LIMIT - 1,
+      isPro: false,
+      domain: domain,
+      sessionRenewed: true,
+    };
+  }
+
+  if (row.last_query_date !== today) {
+    await dbRun(
+      db,
+      'UPDATE users SET count = ?, last_query_date = ? WHERE device_id = ?',
+      [1, today, deviceId]
+    );
+    return {
+      allowed: true,
+      remaining: FREE_DAILY_LIMIT - 1,
+      isPro: false,
+      domain: domain,
+      sessionRenewed: true,
     };
   }
 

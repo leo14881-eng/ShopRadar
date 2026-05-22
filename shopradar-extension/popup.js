@@ -1705,7 +1705,7 @@ async function verifyExportWithServer() {
     const deviceId = await getOrCreateDeviceId();
     const accessToken = await getStoredAccessToken();
     if (!accessToken) {
-      return false;
+      return { ok: false, reason: 'auth' };
     }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -1724,15 +1724,19 @@ async function verifyExportWithServer() {
     }
     if (response.ok && data && data.exportAllowed) {
       await saveAccessTokenFromPayload(data);
-      return true;
+      return { ok: true };
     }
     if (response.status === 401) {
       await clearStoredAccessToken();
+      return { ok: false, reason: 'auth' };
     }
-    return false;
+    if (response.status === 403) {
+      return { ok: false, reason: 'not_pro' };
+    }
+    return { ok: false, reason: 'server' };
   } catch (exportAuthErr) {
     console.warn('[ShopRadar] 导出鉴权失败:', exportAuthErr);
-    return false;
+    return { ok: false, reason: 'network' };
   }
 }
 
@@ -2186,18 +2190,26 @@ async function handleExportClick() {
     showLimitOverlay(UI_TEXT.limitDescDefault);
     return;
   }
-  let exportOk = await verifyExportWithServer();
-  if (!exportOk) {
+  let exportResult = await verifyExportWithServer();
+  if (!exportResult.ok) {
     await refreshProStatusWithWebsiteSync({ skipResume: true });
-    exportOk = await verifyExportWithServer();
+    exportResult = await verifyExportWithServer();
   }
-  if (!exportOk) {
-    await persistProFlag(false);
-    isProSubscriber = false;
-    updateProStatusBar(false);
-    showLimitOverlay(
-      '导出需要有效的 Pro 会话，请确认鉴权服务已启动并已开通 Pro。'
-    );
+  if (!exportResult.ok) {
+    if (exportResult.reason === 'not_pro') {
+      await persistProFlag(false);
+      isProSubscriber = false;
+      updateProStatusBar(false);
+      showLimitOverlay(
+        '导出需要有效的 Pro 会话，请确认鉴权服务已启动并已开通 Pro。'
+      );
+    } else if (exportResult.reason === 'auth') {
+      showLimitOverlay(
+        '导出需要有效的 Pro 会话，请重新打开侧边栏或刷新 Pro 状态。'
+      );
+    } else {
+      showLimitOverlay('导出鉴权服务暂时不可用，请稍后重试。');
+    }
     return;
   }
   if (isProductsLoading) {
@@ -3629,7 +3641,11 @@ async function finishSupportedStoreInit(domain, tabId, storeType, runId) {
   }
 
   if (cache?.products?.length) {
-    if (!(await hasProAccess())) {
+    let skipQuota = isProSubscriber;
+    if (!skipQuota && (await isPersistedProSubscriber())) {
+      skipQuota = await refreshProStatusFromServer({ skipResume: true });
+    }
+    if (!skipQuota) {
       const allowed = await ensureQueryAllowed(domain);
       if (runId !== initRunId) {
         return false;
@@ -4901,6 +4917,20 @@ async function openShopFromCacheEntry(domain, tab, runId, productCache, options)
   if (storeType === 'sfcc' && productCache.storeType !== 'sfcc') {
     hideLimitOverlay();
     clearConfirmedNonShopDomain();
+    let skipQuota = isProSubscriber;
+    if (!skipQuota && (await isPersistedProSubscriber())) {
+      skipQuota = await refreshProStatusFromServer({ skipResume: true });
+    }
+    if (!skipQuota) {
+      const allowed = await ensureQueryAllowed(domain);
+      if (!allowed) {
+        showState('success');
+        rawProductsForExport = null;
+        renderProductList([]);
+        setProductsLoading(false);
+        return false;
+      }
+    }
     showState('success');
     setProductsLoading(true);
     await loadAndRenderProducts(domain, tab.id, { skipQuotaCheck: true });

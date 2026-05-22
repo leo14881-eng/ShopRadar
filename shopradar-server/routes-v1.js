@@ -44,7 +44,10 @@ function isActiveProRow(row) {
   }
   if (row.pro_expires_at) {
     const expiresMs = new Date(row.pro_expires_at).getTime();
-    if (expiresMs && Date.now() > expiresMs) {
+    if (Number.isNaN(expiresMs)) {
+      return false;
+    }
+    if (Date.now() > expiresMs) {
       return false;
     }
   }

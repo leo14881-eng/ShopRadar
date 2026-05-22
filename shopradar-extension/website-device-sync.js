@@ -174,7 +174,7 @@
         }
         if (nextPro) {
           patch[STORAGE_PRO] = true;
-        } else if (!curPro && !paymentPending) {
+        } else if (!paymentPending) {
           patch[STORAGE_PRO] = false;
         }
 
