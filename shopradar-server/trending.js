@@ -60,11 +60,7 @@ function normalizeDomain(domain) {
 }
 
 function getTodayDateString() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return y + '-' + m + '-' + d;
+  return new Date().toISOString().slice(0, 10);
 }
 
 function slugifyTitle(title) {
@@ -573,13 +569,22 @@ async function ingestProducts(db, deviceId, domain, storeType, currency, product
     await markStoreScoredToday(db, storeDomain, today, deviceId);
   }
 
-  await dbRun(
-    db,
-    'INSERT INTO ingest_log (device_id, store_domain, ingested_at, product_count) VALUES (?, ?, ?, ?)',
-    [deviceId, storeDomain, nowIso, ingested]
-  );
+  if (ingested > 0) {
+    await dbRun(
+      db,
+      'INSERT INTO ingest_log (device_id, store_domain, ingested_at, product_count) VALUES (?, ?, ?, ?)',
+      [deviceId, storeDomain, nowIso, ingested]
+    );
 
-  await invalidateTrendingCache();
+    try {
+      await invalidateTrendingCache();
+    } catch (cacheErr) {
+      console.warn(
+        '[ShopRadar Server] trending 缓存失效失败（已写入 DB）:',
+        cacheErr.message
+      );
+    }
+  }
 
   return {
     ok: true,
@@ -592,7 +597,7 @@ async function ingestProducts(db, deviceId, domain, storeType, currency, product
 }
 
 function computeGrowth7d(todayCount, weekTotal, prevWeekTotal) {
-  const current = Number(todayCount || 0) + Number(weekTotal || 0);
+  const current = Number(weekTotal || 0);
   const previous = Number(prevWeekTotal || 0);
   if (previous <= 0) {
     return current > 0 ? 1.5 : 0;
@@ -798,6 +803,7 @@ module.exports = {
   tierTrendingForViewer,
   getStoresTrackedCount,
   applyStoreDiversityCap,
+  computeGrowth7d,
   MAX_INGEST_PRODUCTS,
   MAX_ITEMS_PER_STORE,
 };

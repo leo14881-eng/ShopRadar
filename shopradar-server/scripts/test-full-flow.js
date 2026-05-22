@@ -163,18 +163,19 @@ function todayStr() {
 
 async function grantProDirect(deviceId, email) {
   const today = todayStr();
+  const expiresAt = new Date(Date.now() + 86400000 * 30).toISOString();
   const row = await dbGet('SELECT device_id FROM users WHERE device_id = ?', [
     deviceId,
   ]);
   if (row) {
     await dbRun(
-      'UPDATE users SET is_pro = 1, account_email = COALESCE(?, account_email) WHERE device_id = ?',
-      [email || null, deviceId]
+      'UPDATE users SET is_pro = 1, pro_expires_at = ?, account_email = COALESCE(?, account_email) WHERE device_id = ?',
+      [expiresAt, email || null, deviceId]
     );
   } else {
     await dbRun(
-      'INSERT INTO users (device_id, count, last_query_date, is_pro, account_email) VALUES (?, 0, ?, 1, ?)',
-      [deviceId, today, email || null]
+      'INSERT INTO users (device_id, count, last_query_date, is_pro, pro_expires_at, account_email) VALUES (?, 0, ?, 1, ?, ?)',
+      [deviceId, today, expiresAt, email || null]
     );
   }
 }
@@ -799,6 +800,149 @@ async function testTrendingAndIngest() {
   assert('v1 trending 无效 token → 401', v1BadToken.status === 401);
 }
 
+async function testRegressionFixes(secret) {
+  section('回归修复（过期 Pro / 续费设备 / growth / ingest）');
+
+  const { computeGrowth7d } = require('../trending');
+  assert(
+    'growth_7d 不重复计入 today',
+    computeGrowth7d(5, 10, 5) === 1,
+    'got ' + computeGrowth7d(5, 10, 5)
+  );
+
+  const expiredDevice = 'flow-expired-' + RUN_ID;
+  const expiredAt = new Date(Date.now() - 86400000).toISOString();
+  await dbRun(
+    `INSERT INTO users (device_id, count, last_query_date, is_pro, pro_expires_at)
+     VALUES (?, 0, ?, 1, ?)
+     ON CONFLICT(device_id) DO UPDATE SET
+       is_pro = 1, pro_expires_at = excluded.pro_expires_at`,
+    [expiredDevice, todayStr(), expiredAt]
+  );
+  const expiredLimit = await checkLimit(expiredDevice, TEST_DOMAIN);
+  assert(
+    '过期 Pro check-limit isPro=false',
+    expiredLimit.body &&
+      expiredLimit.body.isPro === false &&
+      expiredLimit.body.allowed === true,
+    JSON.stringify(expiredLimit.body)
+  );
+
+  const emptyDevice = 'flow-empty-ingest-' + RUN_ID;
+  const beforeRow = await dbGet(
+    'SELECT COUNT(*) AS n FROM ingest_log WHERE device_id = ?',
+    [emptyDevice]
+  );
+  const emptyIngest = await request('/api/ingest/products', {
+    method: 'POST',
+    body: {
+      deviceId: emptyDevice,
+      domain: 'empty-test.myshopify.com',
+      products: [{ title: '' }, { title: '   ' }],
+    },
+  });
+  assert(
+    '空 title ingest 返回 ingested=0',
+    emptyIngest.body && emptyIngest.body.ingested === 0,
+    JSON.stringify(emptyIngest.body)
+  );
+  const afterRow = await dbGet(
+    'SELECT COUNT(*) AS n FROM ingest_log WHERE device_id = ?',
+    [emptyDevice]
+  );
+  assert(
+    '空 title ingest 不写入 ingest_log',
+    Number(afterRow.n) === Number(beforeRow.n),
+    'before=' + beforeRow.n + ' after=' + afterRow.n
+  );
+
+  if (!secret) {
+    skip('续费 Webhook 优先 claim 设备', '未配置 .lemon-webhook-secret');
+    return;
+  }
+
+  const renewEmail = 'renew+' + RUN_ID + '@shopradar.test';
+  const checkoutDevice = 'flow-checkout-' + RUN_ID;
+  const claimedDevice = 'flow-claimed-' + RUN_ID;
+
+  await grantProDirect(checkoutDevice, renewEmail);
+  await dbRun(
+    `INSERT INTO pro_email_registry (email, device_id, pro_expires_at, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(email) DO UPDATE SET
+       device_id = excluded.device_id,
+       pro_expires_at = excluded.pro_expires_at,
+       updated_at = excluded.updated_at`,
+    [
+      renewEmail.toLowerCase(),
+      claimedDevice,
+      new Date(Date.now() + 86400000 * 30).toISOString(),
+      new Date().toISOString(),
+    ]
+  );
+  await dbRun(
+    'UPDATE users SET is_pro = 0 WHERE device_id = ?',
+    [checkoutDevice]
+  );
+  await dbRun(
+    `INSERT INTO users (device_id, count, last_query_date, is_pro, account_email, pro_expires_at)
+     VALUES (?, 0, ?, 1, ?, ?)
+     ON CONFLICT(device_id) DO UPDATE SET
+       is_pro = 1, account_email = excluded.account_email, pro_expires_at = excluded.pro_expires_at`,
+    [
+      claimedDevice,
+      todayStr(),
+      renewEmail,
+      new Date(Date.now() + 86400000 * 30).toISOString(),
+    ]
+  );
+
+  const renewPayload = {
+    meta: {
+      event_name: 'subscription_payment_success',
+      custom_data: {
+        device_id: checkoutDevice,
+        email: renewEmail,
+      },
+    },
+  };
+  const renewRes = await postWebhook(
+    '/api/v1/webhook/lemonsqueezy',
+    renewPayload,
+    secret
+  );
+  assert(
+    '续费 Webhook → pro_activated',
+    renewRes.body &&
+      renewRes.body.result &&
+      renewRes.body.result.action === 'pro_activated',
+    JSON.stringify(renewRes.body)
+  );
+  assert(
+    '续费激活 claim 后设备',
+    renewRes.body.result.deviceId === claimedDevice,
+    JSON.stringify(renewRes.body.result)
+  );
+
+  const oldStatus = await request(
+    '/api/pro-status?deviceId=' + encodeURIComponent(checkoutDevice)
+  );
+  assert(
+    '续费后原 checkout 设备 isPro=false',
+    oldStatus.body && oldStatus.body.isPro === false,
+    JSON.stringify(oldStatus.body)
+  );
+
+  const newStatus = await request(
+    '/api/pro-status?deviceId=' + encodeURIComponent(claimedDevice)
+  );
+  assert(
+    '续费后 claim 设备 isPro=true',
+    newStatus.body && newStatus.body.isPro === true,
+    JSON.stringify(newStatus.body)
+  );
+}
+
 async function testEndToEndUserJourney(secret) {
   section('端到端用户旅程（扩展/官网模拟）');
 
@@ -933,6 +1077,7 @@ async function main() {
     await testPendingEmailClaim();
     await testWebhookFlows(secret);
     await testTrendingAndIngest();
+    await testRegressionFixes(secret);
     await testEndToEndUserJourney(secret);
   } catch (crashErr) {
     console.error('\n测试崩溃:', crashErr);

@@ -151,11 +151,7 @@ function isWhitelisted(req, deviceId) {
 }
 
 function getTodayDateString() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return y + '-' + m + '-' + d;
+  return new Date().toISOString().slice(0, 10);
 }
 
 function dbGet(db, sql, params) {
@@ -280,7 +276,7 @@ async function handleCheckLimitFromSession(db, req, deviceId, domain) {
   const today = getTodayDateString();
   const row = await dbGet(
     db,
-    'SELECT device_id, count, last_query_date, is_pro FROM users WHERE device_id = ?',
+    'SELECT device_id, count, last_query_date, is_pro, pro_expires_at FROM users WHERE device_id = ?',
     [deviceId]
   );
 
@@ -457,7 +453,7 @@ async function handleCheckLimit(db, req, deviceId, domain) {
   const today = getTodayDateString();
   const row = await dbGet(
     db,
-    'SELECT device_id, count, last_query_date, is_pro FROM users WHERE device_id = ?',
+    'SELECT device_id, count, last_query_date, is_pro, pro_expires_at FROM users WHERE device_id = ?',
     [deviceId]
   );
 

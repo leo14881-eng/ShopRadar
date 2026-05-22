@@ -64,6 +64,52 @@ function copyDir(srcDir, destDir) {
   }
 }
 
+/** 商店包移除 localhost / 127.0.0.1（Chrome 审核友好） */
+function sanitizeProductionManifest(manifest) {
+  function isLocalDevHostPermission(entry) {
+    return (
+      /^http:\/\/localhost(\:\d+)?\/\*$/.test(entry) ||
+      /^http:\/\/127\.0\.0\.1(\:\d+)?\/\*$/.test(entry)
+    );
+  }
+
+  function isLocalDevMatch(entry) {
+    return (
+      String(entry).indexOf('localhost') !== -1 ||
+      String(entry).indexOf('127.0.0.1') !== -1
+    );
+  }
+
+  if (Array.isArray(manifest.host_permissions)) {
+    manifest.host_permissions = manifest.host_permissions.filter(function (entry) {
+      return !isLocalDevHostPermission(entry);
+    });
+  }
+
+  if (Array.isArray(manifest.content_scripts)) {
+    manifest.content_scripts = manifest.content_scripts.map(function (script) {
+      if (!script || !Array.isArray(script.matches)) {
+        return script;
+      }
+      return Object.assign({}, script, {
+        matches: script.matches.filter(function (match) {
+          return !isLocalDevMatch(match);
+        }),
+      });
+    });
+  }
+
+  return manifest;
+}
+
+function assertProductionManifestClean(manifestPath) {
+  const text = fs.readFileSync(manifestPath, 'utf8');
+  if (text.indexOf('localhost') !== -1 || text.indexOf('127.0.0.1') !== -1) {
+    console.error('生产 manifest 仍含 localhost / 127.0.0.1:', manifestPath);
+    process.exit(1);
+  }
+}
+
 function main() {
   if (fs.existsSync(OUT_DIR)) {
     fs.rmSync(OUT_DIR, { recursive: true, force: true });
@@ -107,13 +153,17 @@ function main() {
   }
 
   const manifestPath = path.join(OUT_DIR, 'manifest.json');
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const manifest = sanitizeProductionManifest(
+    JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+  );
   manifest.shopradar_env = 'production';
   if (!manifest.icons || !manifest.icons['128']) {
     console.error('manifest 缺少 icons');
     process.exit(1);
   }
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  assertProductionManifestClean(manifestPath);
+  console.log('已清理商店 manifest（无 localhost）');
 
   for (const file of INCLUDE_FILES) {
     if (!file.endsWith('.js')) {

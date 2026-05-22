@@ -93,11 +93,18 @@
       } else {
         localStorage.removeItem(STORAGE_PRO);
       }
-      if (payload && payload.accessToken) {
+      if (payload && payload.isPro && payload.accessToken) {
         sessionStorage.setItem(STORAGE_TOKEN, String(payload.accessToken));
         var exp = tokenExpiresAt(payload);
         if (exp) {
           sessionStorage.setItem(STORAGE_TOKEN_EXP, String(exp));
+        }
+      } else {
+        try {
+          sessionStorage.removeItem(STORAGE_TOKEN);
+          sessionStorage.removeItem(STORAGE_TOKEN_EXP);
+        } catch (tokenErr) {
+          /* ignore */
         }
       }
     } catch (webErr) {

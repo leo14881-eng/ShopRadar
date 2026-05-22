@@ -165,6 +165,7 @@ async function findProClaimSource(db, dbGet, normalizedEmail) {
     `SELECT device_id, pro_expires_at, is_pro
      FROM users
      WHERE account_email = ? COLLATE NOCASE AND is_pro = 1
+     ORDER BY pro_expires_at DESC
      LIMIT 1`,
     [normalizedEmail]
   );
@@ -285,7 +286,8 @@ async function claimProByEmail(
     dbRun,
     { deviceId: targetDeviceId, email: normalizedEmail },
     match.proExpiresAt,
-    today
+    today,
+    { preferRegistryDevice: false }
   );
 
   if (!result.handled) {

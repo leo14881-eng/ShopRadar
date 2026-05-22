@@ -150,7 +150,7 @@ npm run package:store
 - 隐私政策链接 404  
 - 权限说明过于笼统  
 - 截图与真实功能不符  
-- 包内仍有 `localhost` / 测试地址（应用 `npm run package:store` 可避免）  
+- 包内仍有 `localhost` / 测试地址（`npm run package:store` 会自动剥离 localhost，见 `docs/CHROME_STORE_LISTING.en.md`）  
 - 缺少 icons  
 
 ---

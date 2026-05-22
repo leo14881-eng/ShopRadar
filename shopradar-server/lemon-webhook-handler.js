@@ -158,32 +158,63 @@ function defaultProExpiresAtIso() {
   return date.toISOString();
 }
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
 /**
  * @param {import('sqlite3').Database} db
  * @param {Function} dbGet
  * @param {Function} dbRun
  * @param {string} today
+ * @param {{ preferRegistryDevice?: boolean }} [options]
  */
-async function activateProForUser(db, dbGet, dbRun, identity, expiresAtIso, today) {
-  const deviceId = identity.deviceId;
+async function activateProForUser(
+  db,
+  dbGet,
+  dbRun,
+  identity,
+  expiresAtIso,
+  today,
+  options
+) {
+  const checkoutDeviceId = identity.deviceId
+    ? String(identity.deviceId).trim()
+    : '';
   const email = identity.email;
+  const normalizedEmail = email ? normalizeEmail(email) : '';
+  const preferRegistryDevice = !options || options.preferRegistryDevice !== false;
   const expiresAt = expiresAtIso || defaultProExpiresAtIso();
   const todayStr = today || new Date().toISOString().slice(0, 10);
 
-  if (!deviceId && !email) {
+  if (!checkoutDeviceId && !normalizedEmail) {
     return {
       handled: false,
       reason: 'missing_user_identity',
     };
   }
 
-  let targetDeviceId = deviceId;
+  let targetDeviceId = checkoutDeviceId;
 
-  if (!targetDeviceId && email) {
+  if (normalizedEmail && preferRegistryDevice) {
+    const registry = await dbGet(
+      db,
+      'SELECT device_id FROM pro_email_registry WHERE email = ?',
+      [normalizedEmail]
+    );
+    if (registry && registry.device_id) {
+      targetDeviceId = String(registry.device_id).trim();
+    }
+  }
+
+  if (!targetDeviceId && normalizedEmail) {
     const byEmail = await dbGet(
       db,
-      'SELECT device_id FROM users WHERE account_email = ? COLLATE NOCASE',
-      [email]
+      `SELECT device_id FROM users
+       WHERE account_email = ? COLLATE NOCASE AND is_pro = 1
+       ORDER BY pro_expires_at DESC
+       LIMIT 1`,
+      [normalizedEmail]
     );
     if (byEmail && byEmail.device_id) {
       targetDeviceId = byEmail.device_id;
@@ -194,7 +225,7 @@ async function activateProForUser(db, dbGet, dbRun, identity, expiresAtIso, toda
     return {
       handled: false,
       reason: 'missing_device_id',
-      email: email || undefined,
+      email: normalizedEmail || undefined,
       proExpiresAt: expiresAt,
     };
   }
@@ -214,14 +245,37 @@ async function activateProForUser(db, dbGet, dbRun, identity, expiresAtIso, toda
          ELSE account_email
        END
        WHERE device_id = ?`,
-      [expiresAt, email || null, email || null, email || null, targetDeviceId]
+      [
+        expiresAt,
+        normalizedEmail || null,
+        normalizedEmail || null,
+        normalizedEmail || null,
+        targetDeviceId,
+      ]
     );
   } else {
     await dbRun(
       db,
       `INSERT INTO users (device_id, count, last_query_date, is_pro, pro_expires_at, account_email)
        VALUES (?, 0, ?, 1, ?, ?)`,
-      [targetDeviceId, todayStr, expiresAt, email || null]
+      [targetDeviceId, todayStr, expiresAt, normalizedEmail || null]
+    );
+  }
+
+  const nowIso = new Date().toISOString();
+  if (normalizedEmail) {
+    await dbRun(
+      db,
+      `UPDATE users SET is_pro = 0, pro_expires_at = ?
+       WHERE account_email = ? COLLATE NOCASE AND device_id != ? AND is_pro = 1`,
+      [nowIso, normalizedEmail, targetDeviceId]
+    );
+  }
+  if (checkoutDeviceId && checkoutDeviceId !== targetDeviceId) {
+    await dbRun(
+      db,
+      'UPDATE users SET is_pro = 0, pro_expires_at = ? WHERE device_id = ? AND is_pro = 1',
+      [nowIso, checkoutDeviceId]
     );
   }
 
@@ -229,7 +283,7 @@ async function activateProForUser(db, dbGet, dbRun, identity, expiresAtIso, toda
     handled: true,
     action: 'pro_activated',
     deviceId: targetDeviceId,
-    email: email || undefined,
+    email: normalizedEmail || undefined,
     proExpiresAt: expiresAt,
     isPro: true,
   };

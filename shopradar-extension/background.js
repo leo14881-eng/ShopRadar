@@ -1617,7 +1617,9 @@ var ShopRadarUrl = (function () {
  */
 var ShopRadarDetectionCache = (function () {
   var STORAGE_KEY = 'sr_negative_detection_v1';
+  var POSITIVE_STORAGE_KEY = 'sr_positive_detection_v1';
   var TTL_MS = 24 * 60 * 60 * 1000;
+  var POSITIVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
   function normalizeDomain(domain) {
     return (domain || '').toLowerCase().trim();
@@ -1727,12 +1729,108 @@ var ShopRadarDetectionCache = (function () {
     });
   }
 
+  function readPositiveEntries() {
+    return chrome.storage.local.get(POSITIVE_STORAGE_KEY).then(function (stored) {
+      var entries = stored[POSITIVE_STORAGE_KEY];
+      if (!entries || typeof entries !== 'object') {
+        entries = {};
+      }
+      var changed = false;
+      var now = Date.now();
+      for (var key in entries) {
+        if (
+          !Object.prototype.hasOwnProperty.call(entries, key) ||
+          !entries[key] ||
+          now - entries[key].at > POSITIVE_TTL_MS
+        ) {
+          delete entries[key];
+          changed = true;
+        }
+      }
+      if (changed) {
+        return chrome.storage.local
+          .set({ [POSITIVE_STORAGE_KEY]: entries })
+          .then(function () {
+            return entries;
+          });
+      }
+      return entries;
+    });
+  }
+
+  /**
+   * @param {string} domain
+   * @returns {Promise<{ domain: string, storeType: string, at: number } | null>}
+   */
+  function readPositive(domain) {
+    var host = normalizeDomain(domain);
+    if (!host) {
+      return Promise.resolve(null);
+    }
+    return readPositiveEntries().then(function (entries) {
+      var row = entries[host];
+      if (!row || Date.now() - row.at > POSITIVE_TTL_MS) {
+        return null;
+      }
+      if (row.storeType !== 'shopify' && row.storeType !== 'sfcc') {
+        return null;
+      }
+      return {
+        domain: host,
+        storeType: row.storeType,
+        at: row.at,
+      };
+    });
+  }
+
+  /**
+   * @param {string} domain
+   * @param {'shopify'|'sfcc'} storeType
+   * @returns {Promise<void>}
+   */
+  function savePositive(domain, storeType) {
+    var host = normalizeDomain(domain);
+    if (!host || (storeType !== 'shopify' && storeType !== 'sfcc')) {
+      return Promise.resolve();
+    }
+    return readPositiveEntries().then(function (entries) {
+      entries[host] = {
+        at: Date.now(),
+        storeType: storeType,
+      };
+      return chrome.storage.local.set({ [POSITIVE_STORAGE_KEY]: entries });
+    });
+  }
+
+  /**
+   * @param {string} domain
+   * @returns {Promise<void>}
+   */
+  function clearPositive(domain) {
+    var host = normalizeDomain(domain);
+    if (!host) {
+      return Promise.resolve();
+    }
+    return readPositiveEntries().then(function (entries) {
+      if (!entries[host]) {
+        return;
+      }
+      delete entries[host];
+      return chrome.storage.local.set({ [POSITIVE_STORAGE_KEY]: entries });
+    });
+  }
+
   return {
     STORAGE_KEY: STORAGE_KEY,
+    POSITIVE_STORAGE_KEY: POSITIVE_STORAGE_KEY,
     TTL_MS: TTL_MS,
+    POSITIVE_TTL_MS: POSITIVE_TTL_MS,
     readNegative: readNegative,
     saveNegative: saveNegative,
     clearNegative: clearNegative,
+    readPositive: readPositive,
+    savePositive: savePositive,
+    clearPositive: clearPositive,
   };
 })();
 
@@ -1747,94 +1845,121 @@ function isKnownSfccDomainHint(domainOrHost) {
   return host.indexOf('popsockets') !== -1 || host.indexOf('mvmt') !== -1;
 }
 
+var SHOPIFY_MARKERS = [
+  'cdn.shopify.com',
+  'shopifycloud.com',
+  'shopify-features',
+  'myshopify.com',
+  'shopify-checkout',
+  'Shopify.shop',
+];
+
+var SFCC_MARKERS = [
+  'demandware.static',
+  'demandware.store',
+  '/on/demandware.',
+  'commercecloud.salesforce',
+];
+
+/**
+ * @param {string} chunk
+ * @param {{ hasShopifyMarker: boolean, platform: string }} state
+ */
+function scanMarkerChunk(chunk, state) {
+  if (!chunk) {
+    return;
+  }
+  if (!state.hasShopifyMarker) {
+    for (var s = 0; s < SHOPIFY_MARKERS.length; s++) {
+      if (chunk.indexOf(SHOPIFY_MARKERS[s]) !== -1) {
+        state.hasShopifyMarker = true;
+        break;
+      }
+    }
+  }
+  if (!state.platform) {
+    for (var f = 0; f < SFCC_MARKERS.length; f++) {
+      if (chunk.indexOf(SFCC_MARKERS[f]) !== -1) {
+        state.platform = 'sfcc';
+        break;
+      }
+    }
+  }
+}
+
 /**
  * ShopRadar — 店铺平台检测（popup 注入 / background MAIN world 共用）
+ * 避免 documentElement.outerHTML，仅扫描 head + 有限 script/link 节点。
  * @returns {{ isShopify: boolean, currency: string, platform: string }}
  */
 function detectStoreInPage() {
-  var hasShopifyGlobal =
-    typeof window.Shopify !== 'undefined' && window.Shopify !== null;
-
-  var htmlSource = document.documentElement
-    ? document.documentElement.outerHTML
-    : '';
-  var platform = '';
-  if (
-    htmlSource.indexOf('demandware.static') !== -1 ||
-    htmlSource.indexOf('demandware.store') !== -1 ||
-    htmlSource.indexOf('/on/demandware.') !== -1 ||
-    htmlSource.indexOf('commercecloud.salesforce') !== -1
-  ) {
-    platform = 'sfcc';
-  }
-
-  var hasShopifyMarker =
-    htmlSource.indexOf('cdn.shopify.com') !== -1 ||
-    htmlSource.indexOf('shopify-features') !== -1 ||
-    htmlSource.indexOf('myshopify.com') !== -1 ||
-    htmlSource.indexOf('shopify-checkout') !== -1;
+  var state = {
+    hasShopifyGlobal:
+      typeof window.Shopify !== 'undefined' && window.Shopify !== null,
+    hasShopifyMarker: false,
+    platform: '',
+  };
 
   if (
-    !hasShopifyMarker &&
-    typeof window.Shopify !== 'undefined' &&
+    state.hasShopifyGlobal &&
     window.Shopify &&
     (window.Shopify.shop || window.Shopify.theme)
   ) {
-    hasShopifyGlobal = true;
+    state.hasShopifyMarker = true;
   }
 
-  if (!hasShopifyMarker) {
-    var headLinks = document.head
-      ? document.head.querySelectorAll('link[href], script[src]')
-      : [];
-    for (var h = 0; h < headLinks.length; h++) {
-      var hrefChunk =
-        (headLinks[h].href || '') + (headLinks[h].src || '');
-      if (
-        hrefChunk.indexOf('cdn.shopify.com') !== -1 ||
-        hrefChunk.indexOf('shopifycloud.com') !== -1 ||
-        hrefChunk.indexOf('shopify-features') !== -1 ||
-        hrefChunk.indexOf('myshopify.com') !== -1
-      ) {
-        hasShopifyMarker = true;
-        break;
+  if (document.head) {
+    var headNodes = document.head.querySelectorAll(
+      'link[href], script[src], script:not([src])'
+    );
+    for (var h = 0; h < headNodes.length; h++) {
+      var headEl = headNodes[h];
+      scanMarkerChunk((headEl.href || '') + (headEl.src || ''), state);
+      if (!state.hasShopifyMarker && headEl.textContent) {
+        scanMarkerChunk(headEl.textContent.slice(0, 600), state);
       }
-      if (
-        !platform &&
-        (hrefChunk.indexOf('demandware.static') !== -1 ||
-          hrefChunk.indexOf('demandware.store') !== -1 ||
-          hrefChunk.indexOf('/on/demandware.') !== -1)
-      ) {
-        platform = 'sfcc';
+      if (state.hasShopifyMarker && state.platform) {
+        break;
       }
     }
   }
 
-  if (!hasShopifyMarker) {
-    var nodes = document.querySelectorAll(
-      'script[src], link[href], script[type="application/json"]'
-    );
-    for (var i = 0; i < nodes.length; i++) {
-      var chunk =
-        (nodes[i].src || '') +
-        (nodes[i].href || '') +
-        (nodes[i].textContent || '');
-      if (
-        chunk.indexOf('cdn.shopify.com') !== -1 ||
-        chunk.indexOf('shopifycloud.com') !== -1 ||
-        chunk.indexOf('shopify-features') !== -1 ||
-        chunk.indexOf('myshopify.com') !== -1 ||
-        chunk.indexOf('Shopify.shop') !== -1
-      ) {
-        hasShopifyMarker = true;
+  if (!state.platform && document.querySelector) {
+    if (
+      document.querySelector(
+        'script[src*="demandware"], link[href*="demandware"], script[src*="commercecloud.salesforce"]'
+      )
+    ) {
+      state.platform = 'sfcc';
+    }
+  }
+
+  if (!state.hasShopifyMarker || !state.platform) {
+    var bodyNodes = document.querySelectorAll('script[src], link[href]');
+    var bodyLimit = bodyNodes.length > 120 ? 120 : bodyNodes.length;
+    for (var i = 0; i < bodyLimit; i++) {
+      scanMarkerChunk(
+        (bodyNodes[i].src || '') + (bodyNodes[i].href || ''),
+        state
+      );
+      if (state.hasShopifyMarker && state.platform) {
         break;
       }
-      if (
-        !platform &&
-        (chunk.indexOf('demandware.static') !== -1 ||
-          chunk.indexOf('demandware.store') !== -1)
-      ) {
-        platform = 'sfcc';
+    }
+  }
+
+  if (!state.hasShopifyMarker) {
+    var jsonScripts = document.querySelectorAll(
+      'script[type="application/json"]'
+    );
+    var jsonLimit = jsonScripts.length > 8 ? 8 : jsonScripts.length;
+    for (var j = 0; j < jsonLimit; j++) {
+      var jsonText = jsonScripts[j].textContent;
+      if (jsonText && jsonText.length < 8192) {
+        scanMarkerChunk(jsonText, state);
+      }
+      if (state.hasShopifyMarker) {
+        break;
       }
     }
   }
@@ -1849,9 +1974,12 @@ function detectStoreInPage() {
   }
 
   return {
-    isShopify: platform === 'sfcc' ? false : hasShopifyGlobal || hasShopifyMarker,
+    isShopify:
+      state.platform === 'sfcc'
+        ? false
+        : state.hasShopifyGlobal || state.hasShopifyMarker,
     currency: String(currentCurrency).trim().toUpperCase(),
-    platform: platform,
+    platform: state.platform,
   };
 }
 

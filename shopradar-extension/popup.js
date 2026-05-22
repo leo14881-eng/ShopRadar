@@ -375,10 +375,13 @@ const KNOWN_SITE_PROBE_TIMEOUT_MS = 10000;
 const SHOPRADAR_MAX_PRODUCTS = 50;
 
 /** 快速检测：complete 后短暂等待 Shopify/SFCC 标记 */
-const QUICK_DETECT_SETTLE_MS = 300;
+const QUICK_DETECT_SETTLE_MS = 120;
+
+/** 并行/快速路径 products.json 探测超时 */
+const FAST_PROBE_TIMEOUT_MS = 2200;
 
 /** 首屏 products.json 探测超时（毫秒） */
-const INSTANT_PROBE_TIMEOUT_MS = 5500;
+const INSTANT_PROBE_TIMEOUT_MS = 2800;
 
 /** 点击扩展图标时记录的标签页（session），避免侧边栏抢焦点后 query 错页 */
 const SESSION_TAB_ID_KEY = 'sr_context_tab_id';
@@ -1686,6 +1689,7 @@ async function persistProFlag(isPro) {
       await chrome.storage.local.set({ [STORAGE_IS_PRO_KEY]: true });
     } else {
       await chrome.storage.local.remove(STORAGE_IS_PRO_KEY);
+      await clearStoredAccessToken();
     }
   } catch (storageErr) {
     console.warn('[ShopRadar] 写入 Pro 缓存失败:', storageErr);
@@ -2188,12 +2192,13 @@ async function handleExportClick() {
     exportOk = await verifyExportWithServer();
   }
   if (!exportOk) {
-    if (!(await hasProAccess())) {
-      showLimitOverlay(
-        '导出需要有效的 Pro 会话，请确认鉴权服务已启动并已开通 Pro。'
-      );
-      return;
-    }
+    await persistProFlag(false);
+    isProSubscriber = false;
+    updateProStatusBar(false);
+    showLimitOverlay(
+      '导出需要有效的 Pro 会话，请确认鉴权服务已启动并已开通 Pro。'
+    );
+    return;
   }
   if (isProductsLoading) {
     window.alert('数据正在加载中，请稍后...');
@@ -3071,11 +3076,13 @@ async function waitForTabComplete(tabId, maxWaitMs) {
 }
 
 /** document complete 后等待 Shopify 脚本注入的时间（SPA 常晚于 complete） */
-const POST_COMPLETE_SETTLE_MS = 1200;
+const POST_COMPLETE_SETTLE_MS = 800;
 
 /** 检测最大重试次数（页面/Shopify 脚本延迟加载） */
 const DETECTION_MAX_ATTEMPTS = 12;
 const DETECTION_RETRY_INTERVAL_MS = 400;
+const DETECTION_FAST_MAX_ATTEMPTS = 2;
+const DETECTION_FAST_RETRY_INTERVAL_MS = 150;
 
 /** 非 Shopify 失败态不再周期性全量 init（见 scheduleFailStateSilentRecovery） */
 let failStateRetryTimer = null;
@@ -3464,10 +3471,25 @@ async function quickDetectStore(tab, options) {
 
   await delay(fast ? QUICK_DETECT_SETTLE_MS : POST_COMPLETE_SETTLE_MS);
 
-  const probedQuick = await probeShopifyByProductsJson(domain, tab.id);
-  if (probedQuick) {
+  if (isKnownSfccDomain(domain)) {
+    let knownSfccDetection = null;
+    try {
+      knownSfccDetection = await executeInMainWorld(tab.id, detectStoreInPage);
+    } catch (injectErr) {
+      if (!isBenignInjectError(injectErr)) {
+        console.warn('[ShopRadar] quickDetect SFCC 注入失败:', injectErr);
+      }
+    }
+    const knownResolved = await resolveDomDetection(
+      knownSfccDetection,
+      domain,
+      tab.id
+    );
+    if (knownResolved) {
+      return knownResolved;
+    }
     await ShopRadarDetectionCache.clearNegative(domain);
-    return buildShopifyProbeDetection(domain, tab.id);
+    return buildSfccDetection(domain, tab.id);
   }
 
   let detection;
@@ -3477,7 +3499,9 @@ async function quickDetectStore(tab, options) {
     if (!isBenignInjectError(injectErr)) {
       console.warn('[ShopRadar] quickDetect 注入失败:', injectErr);
     }
-    const probedAfterInjectFail = await probeShopifyByProductsJson(domain, tab.id);
+    const probedAfterInjectFail = await probeShopifyByProductsJson(domain, tab.id, {
+      timeoutMs: fast ? FAST_PROBE_TIMEOUT_MS : INSTANT_PROBE_TIMEOUT_MS,
+    });
     if (probedAfterInjectFail) {
       await ShopRadarDetectionCache.clearNegative(domain);
       return buildShopifyProbeDetection(domain, tab.id);
@@ -3485,45 +3509,17 @@ async function quickDetectStore(tab, options) {
     return null;
   }
 
-  const platform = detection?.platform ? String(detection.platform) : '';
-
-  if (platform === 'sfcc') {
-    await ShopRadarDetectionCache.clearNegative(domain);
-    return buildSfccDetection(domain, tab.id);
+  const resolved = await resolveDomDetection(detection, domain, tab.id);
+  if (resolved) {
+    return resolved;
   }
 
-  if (detection?.isShopify) {
-    currentStoreType = 'shopify';
-    applyShopActiveCurrency(detection.currency);
-    await ShopRadarDetectionCache.clearNegative(domain);
-    return {
-      storeType: 'shopify',
-      isShopify: true,
-      domain,
-      tabId: tab.id,
-      currency: getActiveCurrencyCode(),
-      platform: '',
-    };
-  }
-
-  if (await probeSfccByPageMarkers(tab.id)) {
-    await ShopRadarDetectionCache.clearNegative(domain);
-    return buildSfccDetection(domain, tab.id);
-  }
-
-  const probed = await probeShopifyByProductsJson(domain, tab.id);
+  const probed = await probeShopifyByProductsJson(domain, tab.id, {
+    timeoutMs: fast ? FAST_PROBE_TIMEOUT_MS : INSTANT_PROBE_TIMEOUT_MS,
+  });
   if (probed) {
-    currentStoreType = 'shopify';
-    applyShopActiveCurrency('USD');
     await ShopRadarDetectionCache.clearNegative(domain);
-    return {
-      storeType: 'shopify',
-      isShopify: true,
-      domain,
-      tabId: tab.id,
-      currency: getActiveCurrencyCode(),
-      platform: '',
-    };
+    return buildShopifyProbeDetection(domain, tab.id);
   }
 
   return null;
@@ -3561,6 +3557,42 @@ function buildSfccDetection(domain, tabId) {
     platform: 'sfcc',
     fromNegativeCache: false,
   };
+}
+
+function isKnownSfccDomain(domain) {
+  return typeof isKnownSfccDomainHint === 'function' && isKnownSfccDomainHint(domain);
+}
+
+/**
+ * 将 DOM 注入检测结果转为标准 detection 对象
+ * @returns {Promise<object | null>}
+ */
+async function resolveDomDetection(detection, domain, tabId) {
+  if (!detection) {
+    return null;
+  }
+
+  const platform = detection.platform ? String(detection.platform) : '';
+  if (platform === 'sfcc') {
+    await ShopRadarDetectionCache.clearNegative(domain);
+    return buildSfccDetection(domain, tabId);
+  }
+
+  if (detection.isShopify) {
+    currentStoreType = 'shopify';
+    applyShopActiveCurrency(detection.currency);
+    await ShopRadarDetectionCache.clearNegative(domain);
+    return {
+      storeType: 'shopify',
+      isShopify: true,
+      domain,
+      tabId: tabId,
+      currency: getActiveCurrencyCode(),
+      platform: '',
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -3671,34 +3703,31 @@ async function fastFirstDetect(tab, runId) {
 
   activeTabId = tab.id;
 
-  const detection = await executeInMainWorld(tab.id, detectStoreInPage).catch(
-    function () {
+  const skipProductsProbe = isKnownSfccDomain(domain);
+  const [detection, probed] = await Promise.all([
+    executeInMainWorld(tab.id, detectStoreInPage).catch(function () {
       return null;
+    }),
+    skipProductsProbe
+      ? Promise.resolve(false)
+      : probeShopifyByProductsJson(domain, tab.id, {
+          timeoutMs: FAST_PROBE_TIMEOUT_MS,
+        }),
+  ]);
+
+  if (skipProductsProbe) {
+    const sfccResolved = await resolveDomDetection(detection, domain, tab.id);
+    if (sfccResolved) {
+      return sfccResolved;
     }
-  );
-  const platform = detection?.platform ? String(detection.platform) : '';
-  if (platform === 'sfcc') {
     await ShopRadarDetectionCache.clearNegative(domain);
     return buildSfccDetection(domain, tab.id);
   }
 
-  if (detection?.isShopify) {
-    currentStoreType = 'shopify';
-    applyShopActiveCurrency(detection.currency);
-    await ShopRadarDetectionCache.clearNegative(domain);
-    return {
-      storeType: 'shopify',
-      isShopify: true,
-      domain: domain,
-      tabId: tab.id,
-      currency: getActiveCurrencyCode(),
-      platform: '',
-    };
+  const resolved = await resolveDomDetection(detection, domain, tab.id);
+  if (resolved) {
+    return resolved;
   }
-
-  const probed = await probeShopifyByProductsJson(domain, tab.id, {
-    timeoutMs: INSTANT_PROBE_TIMEOUT_MS,
-  });
 
   if (probed) {
     await ShopRadarDetectionCache.clearNegative(domain);
@@ -3707,6 +3736,35 @@ async function fastFirstDetect(tab, runId) {
 
   /* 注入/探测均未确认 Shopify 时交给 quickDetect / runDetection，避免误写负向缓存 */
   return null;
+}
+
+/**
+ * 已识别平台缓存命中时跳过 loading（7 天 TTL）
+ * @returns {Promise<boolean>}
+ */
+async function tryInstantPlatformCache(domain, tab, runId, forceRecheck) {
+  if (forceRecheck || !domain || !tab?.id) {
+    return false;
+  }
+
+  const positive = await ShopRadarDetectionCache.readPositive(domain);
+  if (!positive || runId !== initRunId) {
+    return false;
+  }
+
+  const detection =
+    positive.storeType === 'sfcc'
+      ? buildSfccDetection(domain, tab.id)
+      : {
+          storeType: 'shopify',
+          isShopify: true,
+          domain: domain,
+          tabId: tab.id,
+          currency: getActiveCurrencyCode(),
+          platform: '',
+        };
+
+  return applySupportedDetection(detection, runId);
 }
 
 /**
@@ -3835,41 +3893,40 @@ async function runDetection(options) {
       try {
         const freshTab = await chrome.tabs.get(tab.id);
         if (freshTab.status !== 'complete') {
-          await waitForTabComplete(tab.id, 6000);
+          await waitForTabComplete(tab.id, 5000);
         }
       } catch (waitErr) {
         console.warn('[ShopRadar] fast 检测等待标签页失败:', waitErr);
       }
-      await delay(300);
+      await delay(QUICK_DETECT_SETTLE_MS);
     }
 
-    if (await probeSfccByPageMarkers(tab.id)) {
-      await ShopRadarDetectionCache.clearNegative(domain);
-      debugLog('[ShopRadar] SFCC 页面标记探测成功');
-      return buildSfccDetection(domain, tab.id);
-    }
-
-    const knownSfccHint =
-      typeof isKnownSfccDomainHint === 'function' && isKnownSfccDomainHint(domain);
-    if (knownSfccHint) {
-      const sfccAttempts = fast ? 4 : 8;
-      const sfccInterval = fast ? 300 : 350;
-      for (let sfccTry = 0; sfccTry < sfccAttempts; sfccTry++) {
-        if (await probeSfccByPageMarkers(tab.id)) {
-          await ShopRadarDetectionCache.clearNegative(domain);
-          debugLog('[ShopRadar] 已知 SFCC 店铺标记探测成功，第', sfccTry + 1, '次');
-          return buildSfccDetection(domain, tab.id);
+    if (isKnownSfccDomain(domain)) {
+      let knownDetection = null;
+      try {
+        knownDetection = await executeInMainWorld(tab.id, detectStoreInPage);
+      } catch (injectErr) {
+        if (!isBenignInjectError(injectErr)) {
+          console.warn('[ShopRadar] 已知 SFCC 注入失败:', injectErr);
         }
-        if (sfccTry < sfccAttempts - 1) {
-          await delay(sfccInterval);
-        }
+      }
+      const knownResolved = await resolveDomDetection(
+        knownDetection,
+        domain,
+        tab.id
+      );
+      if (knownResolved) {
+        debugLog('[ShopRadar] 已知 SFCC 店铺 DOM 探测成功');
+        return knownResolved;
       }
       await ShopRadarDetectionCache.clearNegative(domain);
       return buildSfccDetection(domain, tab.id);
     }
 
-    const maxAttempts = fast ? 4 : DETECTION_MAX_ATTEMPTS;
-    const retryInterval = fast ? 300 : DETECTION_RETRY_INTERVAL_MS;
+    const maxAttempts = fast ? DETECTION_FAST_MAX_ATTEMPTS : DETECTION_MAX_ATTEMPTS;
+    const retryInterval = fast
+      ? DETECTION_FAST_RETRY_INTERVAL_MS
+      : DETECTION_RETRY_INTERVAL_MS;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       let detection = null;
@@ -3881,33 +3938,17 @@ async function runDetection(options) {
         }
       }
 
-      const isShopify = Boolean(detection?.isShopify);
       const platform = detection?.platform ? String(detection.platform) : '';
       if (detection?.platform) {
         lastPlatform = platform;
       }
 
-      if (platform === 'sfcc') {
-        await ShopRadarDetectionCache.clearNegative(domain);
-        return buildSfccDetection(domain, tab.id);
-      }
-
-      if (isShopify) {
-        currentStoreType = 'shopify';
-        applyShopActiveCurrency(detection?.currency);
+      const resolved = await resolveDomDetection(detection, domain, tab.id);
+      if (resolved) {
         if (attempt > 0) {
           debugLog('[ShopRadar] 延迟检测成功，第', attempt + 1, '次');
         }
-        await ShopRadarDetectionCache.clearNegative(domain);
-        return {
-          storeType: 'shopify',
-          isShopify: true,
-          domain,
-          tabId: tab.id,
-          currency: getActiveCurrencyCode(),
-          platform: '',
-          fromNegativeCache: false,
-        };
+        return resolved;
       }
 
       if (attempt < maxAttempts - 1) {
@@ -3916,7 +3957,7 @@ async function runDetection(options) {
     }
 
     const probedEarly = await probeShopifyByProductsJson(domain, tab.id, {
-      timeoutMs: fast ? INSTANT_PROBE_TIMEOUT_MS : 0,
+      timeoutMs: fast ? FAST_PROBE_TIMEOUT_MS : INSTANT_PROBE_TIMEOUT_MS,
     });
     if (probedEarly) {
       await ShopRadarDetectionCache.clearNegative(domain);
@@ -4409,7 +4450,7 @@ async function probeShopifyByProductsJson(domain, tabId, options) {
 
   const timeoutMs =
     options && options.timeoutMs ? Number(options.timeoutMs) : 0;
-  const pageProbeBudgetMs = timeoutMs > 0 ? timeoutMs : 6000;
+  const pageProbeBudgetMs = timeoutMs > 0 ? timeoutMs : 4500;
   const hosts = getProductsJsonHostCandidates(domain);
   const cachedHref = await resolveTabReferenceHref(tabId);
 
@@ -5187,6 +5228,18 @@ async function persistResult(payload) {
   } catch (error) {
     console.warn('[ShopRadar] 缓存检测结果失败:', error);
   }
+
+  if (!payload?.domain) {
+    return;
+  }
+
+  if (payload.storeType === 'shopify' || payload.storeType === 'sfcc') {
+    ShopRadarDetectionCache.savePositive(payload.domain, payload.storeType).catch(
+      function () {}
+    );
+  } else {
+    ShopRadarDetectionCache.clearPositive(payload.domain).catch(function () {});
+  }
 }
 
 /**
@@ -5333,6 +5386,22 @@ async function init(options) {
   }
 
   if (await tryInstantOpenFromCache(domain, tab, runId, options)) {
+    return;
+  }
+
+  if (await tryInstantPlatformCache(domain, tab, runId, forceRecheck)) {
+    if (!forceRecheck && tab?.id) {
+      runDetection({ fast: true, tab: tab, forceRecheck: false })
+        .then(async function (detection) {
+          if (runId !== initRunId) {
+            return;
+          }
+          if (detection.storeType === 'shopify' || detection.storeType === 'sfcc') {
+            await applySupportedDetection(detection, runId);
+          }
+        })
+        .catch(function () {});
+    }
     return;
   }
 

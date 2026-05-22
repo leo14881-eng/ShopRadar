@@ -53,7 +53,9 @@ npm start
 
 扩展配置：复制 `shopradar-extension/lemon-checkout.config.example.js` 为 `lemon-checkout.config.js`。
 
-Chrome 商店发布说明见 [`shopradar-extension/CHROME_WEB_STORE.md`](shopradar-extension/CHROME_WEB_STORE.md)。
+Chrome 商店发布说明见 [`shopradar-extension/CHROME_WEB_STORE.md`](shopradar-extension/CHROME_WEB_STORE.md)。  
+英文 Listing 文案与权限说明：[`docs/CHROME_STORE_LISTING.en.md`](docs/CHROME_STORE_LISTING.en.md)  
+收益测算（Lemon $14.90/月）：[`docs/REVENUE_PROJECTION.md`](docs/REVENUE_PROJECTION.md)
 
 ## 仓库
 

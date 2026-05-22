@@ -100,7 +100,9 @@ function mountV1Routes(app, db, deps) {
         const locale = parseAcceptLanguage(req.headers['accept-language']);
 
         let golden = await getTrendingCache();
-        let cacheHit = Boolean(golden && golden.items);
+        let cacheHit = Boolean(
+          golden && Array.isArray(golden.items) && golden.items.length > 0
+        );
 
         if (!cacheHit) {
           golden = await queryTrendingGolden(db, { limit: 100 });

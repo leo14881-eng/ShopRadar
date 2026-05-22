@@ -8,94 +8,121 @@ function isKnownSfccDomainHint(domainOrHost) {
   return host.indexOf('popsockets') !== -1 || host.indexOf('mvmt') !== -1;
 }
 
+var SHOPIFY_MARKERS = [
+  'cdn.shopify.com',
+  'shopifycloud.com',
+  'shopify-features',
+  'myshopify.com',
+  'shopify-checkout',
+  'Shopify.shop',
+];
+
+var SFCC_MARKERS = [
+  'demandware.static',
+  'demandware.store',
+  '/on/demandware.',
+  'commercecloud.salesforce',
+];
+
+/**
+ * @param {string} chunk
+ * @param {{ hasShopifyMarker: boolean, platform: string }} state
+ */
+function scanMarkerChunk(chunk, state) {
+  if (!chunk) {
+    return;
+  }
+  if (!state.hasShopifyMarker) {
+    for (var s = 0; s < SHOPIFY_MARKERS.length; s++) {
+      if (chunk.indexOf(SHOPIFY_MARKERS[s]) !== -1) {
+        state.hasShopifyMarker = true;
+        break;
+      }
+    }
+  }
+  if (!state.platform) {
+    for (var f = 0; f < SFCC_MARKERS.length; f++) {
+      if (chunk.indexOf(SFCC_MARKERS[f]) !== -1) {
+        state.platform = 'sfcc';
+        break;
+      }
+    }
+  }
+}
+
 /**
  * ShopRadar — 店铺平台检测（popup 注入 / background MAIN world 共用）
+ * 避免 documentElement.outerHTML，仅扫描 head + 有限 script/link 节点。
  * @returns {{ isShopify: boolean, currency: string, platform: string }}
  */
 function detectStoreInPage() {
-  var hasShopifyGlobal =
-    typeof window.Shopify !== 'undefined' && window.Shopify !== null;
-
-  var htmlSource = document.documentElement
-    ? document.documentElement.outerHTML
-    : '';
-  var platform = '';
-  if (
-    htmlSource.indexOf('demandware.static') !== -1 ||
-    htmlSource.indexOf('demandware.store') !== -1 ||
-    htmlSource.indexOf('/on/demandware.') !== -1 ||
-    htmlSource.indexOf('commercecloud.salesforce') !== -1
-  ) {
-    platform = 'sfcc';
-  }
-
-  var hasShopifyMarker =
-    htmlSource.indexOf('cdn.shopify.com') !== -1 ||
-    htmlSource.indexOf('shopify-features') !== -1 ||
-    htmlSource.indexOf('myshopify.com') !== -1 ||
-    htmlSource.indexOf('shopify-checkout') !== -1;
+  var state = {
+    hasShopifyGlobal:
+      typeof window.Shopify !== 'undefined' && window.Shopify !== null,
+    hasShopifyMarker: false,
+    platform: '',
+  };
 
   if (
-    !hasShopifyMarker &&
-    typeof window.Shopify !== 'undefined' &&
+    state.hasShopifyGlobal &&
     window.Shopify &&
     (window.Shopify.shop || window.Shopify.theme)
   ) {
-    hasShopifyGlobal = true;
+    state.hasShopifyMarker = true;
   }
 
-  if (!hasShopifyMarker) {
-    var headLinks = document.head
-      ? document.head.querySelectorAll('link[href], script[src]')
-      : [];
-    for (var h = 0; h < headLinks.length; h++) {
-      var hrefChunk =
-        (headLinks[h].href || '') + (headLinks[h].src || '');
-      if (
-        hrefChunk.indexOf('cdn.shopify.com') !== -1 ||
-        hrefChunk.indexOf('shopifycloud.com') !== -1 ||
-        hrefChunk.indexOf('shopify-features') !== -1 ||
-        hrefChunk.indexOf('myshopify.com') !== -1
-      ) {
-        hasShopifyMarker = true;
-        break;
+  if (document.head) {
+    var headNodes = document.head.querySelectorAll(
+      'link[href], script[src], script:not([src])'
+    );
+    for (var h = 0; h < headNodes.length; h++) {
+      var headEl = headNodes[h];
+      scanMarkerChunk((headEl.href || '') + (headEl.src || ''), state);
+      if (!state.hasShopifyMarker && headEl.textContent) {
+        scanMarkerChunk(headEl.textContent.slice(0, 600), state);
       }
-      if (
-        !platform &&
-        (hrefChunk.indexOf('demandware.static') !== -1 ||
-          hrefChunk.indexOf('demandware.store') !== -1 ||
-          hrefChunk.indexOf('/on/demandware.') !== -1)
-      ) {
-        platform = 'sfcc';
+      if (state.hasShopifyMarker && state.platform) {
+        break;
       }
     }
   }
 
-  if (!hasShopifyMarker) {
-    var nodes = document.querySelectorAll(
-      'script[src], link[href], script[type="application/json"]'
-    );
-    for (var i = 0; i < nodes.length; i++) {
-      var chunk =
-        (nodes[i].src || '') +
-        (nodes[i].href || '') +
-        (nodes[i].textContent || '');
-      if (
-        chunk.indexOf('cdn.shopify.com') !== -1 ||
-        chunk.indexOf('shopifycloud.com') !== -1 ||
-        chunk.indexOf('shopify-features') !== -1 ||
-        chunk.indexOf('myshopify.com') !== -1 ||
-        chunk.indexOf('Shopify.shop') !== -1
-      ) {
-        hasShopifyMarker = true;
+  if (!state.platform && document.querySelector) {
+    if (
+      document.querySelector(
+        'script[src*="demandware"], link[href*="demandware"], script[src*="commercecloud.salesforce"]'
+      )
+    ) {
+      state.platform = 'sfcc';
+    }
+  }
+
+  if (!state.hasShopifyMarker || !state.platform) {
+    var bodyNodes = document.querySelectorAll('script[src], link[href]');
+    var bodyLimit = bodyNodes.length > 120 ? 120 : bodyNodes.length;
+    for (var i = 0; i < bodyLimit; i++) {
+      scanMarkerChunk(
+        (bodyNodes[i].src || '') + (bodyNodes[i].href || ''),
+        state
+      );
+      if (state.hasShopifyMarker && state.platform) {
         break;
       }
-      if (
-        !platform &&
-        (chunk.indexOf('demandware.static') !== -1 ||
-          chunk.indexOf('demandware.store') !== -1)
-      ) {
-        platform = 'sfcc';
+    }
+  }
+
+  if (!state.hasShopifyMarker) {
+    var jsonScripts = document.querySelectorAll(
+      'script[type="application/json"]'
+    );
+    var jsonLimit = jsonScripts.length > 8 ? 8 : jsonScripts.length;
+    for (var j = 0; j < jsonLimit; j++) {
+      var jsonText = jsonScripts[j].textContent;
+      if (jsonText && jsonText.length < 8192) {
+        scanMarkerChunk(jsonText, state);
+      }
+      if (state.hasShopifyMarker) {
+        break;
       }
     }
   }
@@ -110,8 +137,11 @@ function detectStoreInPage() {
   }
 
   return {
-    isShopify: platform === 'sfcc' ? false : hasShopifyGlobal || hasShopifyMarker,
+    isShopify:
+      state.platform === 'sfcc'
+        ? false
+        : state.hasShopifyGlobal || state.hasShopifyMarker,
     currency: String(currentCurrency).trim().toUpperCase(),
-    platform: platform,
+    platform: state.platform,
   };
 }

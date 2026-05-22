@@ -148,12 +148,22 @@
     }
   }
 
+  function clearStoredAccessToken() {
+    try {
+      sessionStorage.removeItem(STORAGE_ACCESS_TOKEN);
+      sessionStorage.removeItem(STORAGE_TOKEN_EXPIRES);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   function persistProFlag(pro) {
     try {
       if (pro) {
         localStorage.setItem(STORAGE_IS_PRO, '1');
       } else {
         localStorage.removeItem(STORAGE_IS_PRO);
+        clearStoredAccessToken();
       }
     } catch (e) {
       /* ignore */
@@ -561,8 +571,8 @@
     tbody.innerHTML = html;
   }
 
-  function fetchTrending(deviceId) {
-    var token = getStoredAccessToken();
+  function fetchTrending(deviceId, retryWithoutToken) {
+    var token = retryWithoutToken ? '' : getStoredAccessToken();
     var url =
       API_BASE +
       '/api/v1/dashboard/trending?deviceId=' +
@@ -576,6 +586,10 @@
     }
     return fetch(url, { headers: headers })
       .then(function (response) {
+        if (response.status === 401 && token) {
+          clearStoredAccessToken();
+          return fetchTrending(deviceId, true);
+        }
         if (!response.ok) {
           return { ok: false, items: [] };
         }
