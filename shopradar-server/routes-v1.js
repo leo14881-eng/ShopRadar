@@ -3,6 +3,7 @@
 /**
  * ShopRadar API v1 路由
  * - GET  /api/v1/dashboard/trending
+ * - GET  /api/v1/dashboard/trending/famous-stores
  * - POST /api/v1/webhook/lemonsqueezy
  */
 
@@ -21,10 +22,14 @@ const { parseAcceptLanguage } = require('./i18n-messages');
 const {
   queryTrendingGolden,
   tierTrendingForViewer,
+  queryFamousStoresGolden,
+  tierFamousStoresForViewer,
 } = require('./trending');
 const {
   getTrendingCache,
   setTrendingCache,
+  getFamousStoresCache,
+  setFamousStoresCache,
   TRENDING_CACHE_TTL_SEC,
 } = require('./redis-client');
 
@@ -130,6 +135,90 @@ function mountV1Routes(app, db, deps) {
       })
       .catch(function (error) {
         console.error('[ShopRadar Server] v1 trending 失败:', error);
+        if (error && error.code && String(error.code).indexOf('REDIS') === 0) {
+          return res.status(503).json({
+            ok: false,
+            code: error.code,
+            msg: 'Redis 缓存不可用',
+          });
+        }
+        res.status(500).json({ ok: false, msg: '服务器内部错误' });
+      });
+  });
+
+  /**
+   * GET /api/v1/dashboard/trending/famous-stores
+   * 全球知名店铺 · 昨日研究热度榜（非真实销量）
+   */
+  app.get('/api/v1/dashboard/trending/famous-stores', function (req, res) {
+    const deviceId = req.query.deviceId
+      ? String(req.query.deviceId).trim()
+      : '';
+    const limit = Math.min(
+      Math.max(Number(req.query.limit) || 25, 1),
+      50
+    );
+    const accessToken = extractAccessTokenFromRequest(req);
+
+    if (!deviceId) {
+      return res.status(400).json({
+        ok: false,
+        code: 'MISSING_DEVICE_ID',
+        msg: '缺少 deviceId',
+      });
+    }
+
+    if (accessToken) {
+      const tokenCheck = verifyAccessToken(accessToken, deviceId);
+      if (!tokenCheck.valid) {
+        return res.status(401).json({
+          ok: false,
+          code: 'INVALID_TOKEN',
+          msg: '访问令牌无效或已过期',
+        });
+      }
+    }
+
+    dbGet(
+      db,
+      'SELECT device_id, is_pro, pro_expires_at FROM users WHERE device_id = ?',
+      [deviceId]
+    )
+      .then(async function (row) {
+        const isPro = isActiveProRow(row);
+        const locale = parseAcceptLanguage(req.headers['accept-language']);
+
+        let golden = await getFamousStoresCache();
+        let cacheHit = Boolean(
+          golden && Array.isArray(golden.items) && golden.items.length > 0
+        );
+
+        if (!cacheHit) {
+          golden = await queryFamousStoresGolden(db, { limit: 50 });
+          await setFamousStoresCache(golden);
+        }
+
+        const payload = tierFamousStoresForViewer(golden, {
+          isPro: isPro,
+          limit: limit,
+          locale: locale,
+        });
+
+        res.json(
+          Object.assign({}, payload, {
+            cache: {
+              hit: cacheHit,
+              ttl_sec: TRENDING_CACHE_TTL_SEC,
+            },
+            viewer: {
+              device_id: deviceId,
+              is_pro: isPro,
+            },
+          })
+        );
+      })
+      .catch(function (error) {
+        console.error('[ShopRadar Server] v1 famous-stores 失败:', error);
         if (error && error.code && String(error.code).indexOf('REDIS') === 0) {
           return res.status(503).json({
             ok: false,

@@ -1,7 +1,13 @@
 'use strict';
 
 const { getMessages, getNextHourUtcIso } = require('./i18n-messages');
-const { invalidateTrendingCache } = require('./redis-client');
+const { invalidateTrendingCache, invalidateFamousStoresCache } = require('./redis-client');
+const {
+  getFamousStores,
+  getFamousStoreDomains,
+  getFamousStoreMap,
+  normalizeDomain: normalizeFamousDomain,
+} = require('./famous-stores');
 
 const MAX_INGEST_PRODUCTS = 50;
 const MAX_INGEST_PER_DEVICE_DAY = 40;
@@ -23,16 +29,16 @@ const TRENDING_RANK_SQL = `
       pc.price,
       pc.currency,
       pc.total_sightings,
-      COALESCE(today_stats.today_devices, 0) AS today_count,
+      COALESCE(yesterday_stats.yesterday_devices, 0) AS yesterday_count,
       COALESCE(week_stats.week_total, 0) AS week_total,
       COALESCE(prev_week_stats.prev_week_total, 0) AS prev_week_total
     FROM product_catalog pc
     LEFT JOIN (
-      SELECT product_key, COUNT(DISTINCT device_id) AS today_devices
+      SELECT product_key, COUNT(DISTINCT device_id) AS yesterday_devices
       FROM daily_product_devices
       WHERE stat_date = ?
       GROUP BY product_key
-    ) today_stats ON today_stats.product_key = pc.product_key
+    ) yesterday_stats ON yesterday_stats.product_key = pc.product_key
     LEFT JOIN (
       SELECT product_key, COUNT(DISTINCT device_id) AS week_total
       FROM daily_product_devices
@@ -45,9 +51,9 @@ const TRENDING_RANK_SQL = `
       WHERE stat_date >= date(?, '-13 day') AND stat_date < date(?, '-6 day')
       GROUP BY product_key
     ) prev_week_stats ON prev_week_stats.product_key = pc.product_key
-    WHERE COALESCE(today_stats.today_devices, 0) + COALESCE(week_stats.week_total, 0) > 0
+    WHERE COALESCE(yesterday_stats.yesterday_devices, 0) + COALESCE(week_stats.week_total, 0) > 0
     ORDER BY
-      (COALESCE(today_stats.today_devices, 0) * 100 + COALESCE(week_stats.week_total, 0)) DESC,
+      (COALESCE(yesterday_stats.yesterday_devices, 0) * 100 + COALESCE(week_stats.week_total, 0)) DESC,
       pc.last_seen_at DESC
     LIMIT ?
   `;
@@ -61,6 +67,15 @@ function normalizeDomain(domain) {
 
 function getTodayDateString() {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** UTC 日历下的「昨日」YYYY-MM-DD（榜单主排序日） */
+function getYesterdayDateString(fromToday) {
+  const base = fromToday
+    ? new Date(String(fromToday) + 'T12:00:00.000Z')
+    : new Date();
+  base.setUTCDate(base.getUTCDate() - 1);
+  return base.toISOString().slice(0, 10);
 }
 
 function slugifyTitle(title) {
@@ -433,8 +448,9 @@ function applyStoreDiversityCap(items, limit) {
  * @param {number} fetchLimit
  */
 async function fetchTrendingRankedRows(db, today, fetchLimit) {
+  const yesterday = getYesterdayDateString(today);
   return dbAll(db, TRENDING_RANK_SQL, [
-    today,
+    yesterday,
     today,
     today,
     today,
@@ -578,6 +594,7 @@ async function ingestProducts(db, deviceId, domain, storeType, currency, product
 
     try {
       await invalidateTrendingCache();
+      await invalidateFamousStoresCache();
     } catch (cacheErr) {
       console.warn(
         '[ShopRadar Server] trending 缓存失效失败（已写入 DB）:',
@@ -624,7 +641,7 @@ function buildProductUrl(storeDomain, title) {
 
 function mapGoldenRow(row, index) {
   const growthRatio = computeGrowth7d(
-    row.today_count,
+    row.yesterday_count,
     row.week_total,
     row.prev_week_total
   );
@@ -637,7 +654,7 @@ function mapGoldenRow(row, index) {
     category: row.category || 'General',
     est_daily_rev: estimateDailyRev(
       row.price,
-      row.today_count,
+      row.yesterday_count,
       row.week_total
     ),
     growth_7d: growthPct,
@@ -678,6 +695,7 @@ function tierGoldenItem(item, isPro, locale) {
 async function queryTrendingGolden(db, opts) {
   const limit = Math.min(Math.max(Number(opts && opts.limit) || 100, 1), 100);
   const today = getTodayDateString();
+  const rankDate = getYesterdayDateString(today);
   const fetchLimit = Math.min(limit * TRENDING_FETCH_MULTIPLIER, 500);
 
   const rows = await fetchTrendingRankedRows(db, today, fetchLimit);
@@ -690,6 +708,8 @@ async function queryTrendingGolden(db, opts) {
     version: 'v1',
     updated_at: nowUtc,
     next_update_at: getNextHourUtcIso(),
+    rank_date: rankDate,
+    rank_date_label: rankDate + ' · UTC',
     stores_tracked: storesTracked,
     items: items,
   };
@@ -718,6 +738,8 @@ function tierTrendingForViewer(golden, opts) {
     version: 'v1',
     updated_at: (golden && golden.updated_at) || new Date().toISOString(),
     next_update_at: (golden && golden.next_update_at) || getNextHourUtcIso(),
+    rank_date: golden && golden.rank_date,
+    rank_date_label: golden && golden.rank_date_label,
     stores_tracked: golden && golden.stores_tracked,
     is_pro: isPro,
     locale: locale,
@@ -752,6 +774,7 @@ async function queryTrending(db, opts) {
   const limit = Math.min(Math.max(Number(opts && opts.limit) || 20, 1), 100);
   const isPro = Boolean(opts && opts.isPro);
   const today = getTodayDateString();
+  const rankDate = getYesterdayDateString(today);
   const fetchLimit = Math.min(limit * TRENDING_FETCH_MULTIPLIER, 500);
 
   const rows = await fetchTrendingRankedRows(db, today, fetchLimit);
@@ -760,7 +783,7 @@ async function queryTrending(db, opts) {
   const ranked = applyStoreDiversityCap(
     rows.map(function (row, index) {
       const growthRatio = computeGrowth7d(
-        row.today_count,
+        row.yesterday_count,
         row.week_total,
         row.prev_week_total
       );
@@ -771,7 +794,11 @@ async function queryTrending(db, opts) {
         title: row.title,
         sku: row.sku || '',
         category: row.category || 'General',
-        estDailyRev: estimateDailyRev(row.price, row.today_count, row.week_total),
+        estDailyRev: estimateDailyRev(
+          row.price,
+          row.yesterday_count,
+          row.week_total
+        ),
         growth7d: growthPct,
         sourceStore: row.store_domain,
         adSignal: pickAdSignal(row.product_key),
@@ -788,9 +815,166 @@ async function queryTrending(db, opts) {
   return {
     ok: true,
     updatedAt: new Date().toISOString(),
-    dateLabel: today + ' · UTC',
+    dateLabel: rankDate + ' · UTC (yesterday)',
+    rankDate: rankDate,
     storesTracked: storesTracked,
     isPro: isPro,
+    items: items,
+  };
+}
+
+/**
+ * @param {import('sqlite3').Database} db
+ * @param {string} today
+ */
+async function fetchFamousStoreHeatRows(db, today) {
+  const yesterday = getYesterdayDateString(today);
+  const domains = getFamousStoreDomains();
+  if (!domains.length) {
+    return [];
+  }
+
+  const placeholders = domains.map(function () {
+    return '?';
+  }).join(', ');
+
+  const sql =
+    `
+    SELECT
+      pc.store_domain,
+      COUNT(DISTINCT CASE WHEN dpd.stat_date = ? THEN dpd.device_id END) AS yesterday_count,
+      COUNT(DISTINCT CASE WHEN dpd.stat_date >= date(?, '-6 day') AND dpd.stat_date <= ? THEN dpd.device_id END) AS week_total
+    FROM daily_product_devices dpd
+    INNER JOIN product_catalog pc ON pc.product_key = dpd.product_key
+    WHERE pc.store_domain IN (` +
+    placeholders +
+    `)
+    GROUP BY pc.store_domain
+  `;
+
+  return dbAll(db, sql, [yesterday, today, today].concat(domains));
+}
+
+function mergeFamousStoreRanking(rows, limit) {
+  const cap = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  const meta = getFamousStoreMap();
+  const byDomain = Object.create(null);
+
+  (rows || []).forEach(function (row) {
+    const domain = normalizeFamousDomain(row.store_domain);
+    byDomain[domain] = row;
+  });
+
+  const merged = getFamousStores().map(function (store) {
+    const hit = byDomain[store.domain] || {};
+    const yesterdayCount = Number(hit.yesterday_count || 0);
+    const weekTotal = Number(hit.week_total || 0);
+    return {
+      store_domain: store.domain,
+      display_name: store.name,
+      platform: store.platform,
+      region: store.region,
+      yesterday_count: yesterdayCount,
+      week_total: weekTotal,
+      score: yesterdayCount * 100 + weekTotal,
+    };
+  });
+
+  merged.sort(function (a, b) {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    return String(a.display_name).localeCompare(String(b.display_name));
+  });
+
+  return merged.slice(0, cap).map(function (row, index) {
+    return {
+      rank: index + 1,
+      store_domain: row.store_domain,
+      display_name: row.display_name,
+      platform: row.platform,
+      region: row.region,
+      yesterday_researchers: row.yesterday_count,
+      week_researchers: row.week_total,
+      store_url: 'https://' + row.store_domain,
+    };
+  });
+}
+
+function tierFamousStoreItem(item, isPro, locale) {
+  if (isPro) {
+    return item;
+  }
+  const msg = getMessages(locale || 'en');
+  return {
+    rank: item.rank,
+    display_name: item.display_name,
+    platform: item.platform,
+    region: msg.hidden_value,
+    yesterday_researchers: msg.hidden_value,
+    week_researchers: msg.hidden_value,
+    store_domain: msg.hidden_domain,
+    store_url: msg.hidden_url,
+    locked: true,
+    locked_message: msg.upgrade_unlock,
+  };
+}
+
+/**
+ * @param {import('sqlite3').Database} db
+ * @param {{ limit?: number }} [opts]
+ */
+async function queryFamousStoresGolden(db, opts) {
+  const limit = Math.min(Math.max(Number(opts && opts.limit) || 25, 1), 50);
+  const today = getTodayDateString();
+  const rankDate = getYesterdayDateString(today);
+  const rows = await fetchFamousStoreHeatRows(db, today);
+  const items = mergeFamousStoreRanking(rows, limit);
+  const nowUtc = new Date().toISOString();
+
+  return {
+    ok: true,
+    version: 'v1',
+    kind: 'famous_stores',
+    updated_at: nowUtc,
+    next_update_at: getNextHourUtcIso(),
+    rank_date: rankDate,
+    rank_date_label: rankDate + ' · UTC',
+    sample_size: getFamousStores().length,
+    disclaimer_key: 'research_heat_not_sales',
+    items: items,
+  };
+}
+
+/**
+ * @param {object} golden
+ * @param {{ isPro?: boolean, limit?: number, locale?: string }} opts
+ */
+function tierFamousStoresForViewer(golden, opts) {
+  const isPro = Boolean(opts && opts.isPro);
+  const locale = (opts && opts.locale) || 'en';
+  const limit = Math.min(Math.max(Number(opts && opts.limit) || 25, 1), 50);
+  const msg = getMessages(locale);
+
+  const items = ((golden && golden.items) || [])
+    .slice(0, limit)
+    .map(function (item) {
+      return tierFamousStoreItem(item, isPro, locale);
+    });
+
+  return {
+    ok: true,
+    version: 'v1',
+    kind: 'famous_stores',
+    updated_at: (golden && golden.updated_at) || new Date().toISOString(),
+    next_update_at: (golden && golden.next_update_at) || getNextHourUtcIso(),
+    rank_date: golden && golden.rank_date,
+    rank_date_label: golden && golden.rank_date_label,
+    sample_size: golden && golden.sample_size,
+    is_pro: isPro,
+    locale: locale,
+    paywall_hint: isPro ? null : msg.paywall_hint,
+    disclaimer: msg.famous_stores_disclaimer || msg.paywall_hint,
     items: items,
   };
 }
@@ -800,10 +984,13 @@ module.exports = {
   ingestProducts,
   queryTrending,
   queryTrendingGolden,
+  queryFamousStoresGolden,
   tierTrendingForViewer,
+  tierFamousStoresForViewer,
   getStoresTrackedCount,
   applyStoreDiversityCap,
   computeGrowth7d,
+  getYesterdayDateString,
   MAX_INGEST_PRODUCTS,
   MAX_ITEMS_PER_STORE,
 };

@@ -385,12 +385,16 @@
   function setPaywallLocked(locked) {
     var overlay = $('paywall-overlay');
     var blurEl = $('trending-table-blur');
+    var famousBlurEl = $('famous-stores-table-blur');
 
     if (overlay) {
       overlay.classList.toggle('hidden', !locked);
     }
     if (blurEl) {
       blurEl.classList.toggle('paywall-blur', locked);
+    }
+    if (famousBlurEl) {
+      famousBlurEl.classList.toggle('paywall-blur', locked);
     }
   }
 
@@ -403,6 +407,7 @@
     updateNavUpgrade(pro);
     setPaywallLocked(!pro);
     loadTrending(getOrCreateDeviceId(), pro);
+    loadFamousStores(getOrCreateDeviceId(), pro);
   }
 
   function formatMoney(value) {
@@ -480,6 +485,13 @@
     var storesEl = $('stores-tracked-badge');
     if (dateEl && payload) {
       var parts = [];
+      if (payload.rank_date_label || payload.rank_date) {
+        parts.push(
+          t('dashboard.rankFor') +
+            ': ' +
+            String(payload.rank_date_label || payload.rank_date)
+        );
+      }
       if (payload.updated_at) {
         parts.push(t('dashboard.updatedAt') + ': ' + formatUtcLocal(payload.updated_at));
       }
@@ -569,6 +581,173 @@
     }
 
     tbody.innerHTML = html;
+  }
+
+  function normalizeFamousStoreItem(item) {
+    return {
+      rank: item.rank,
+      displayName: item.display_name || item.displayName,
+      platform: item.platform,
+      region: item.region,
+      yesterdayResearchers:
+        item.yesterday_researchers != null
+          ? item.yesterday_researchers
+          : item.yesterdayResearchers,
+      weekResearchers:
+        item.week_researchers != null ? item.week_researchers : item.weekResearchers,
+      storeDomain: item.store_domain || item.storeDomain,
+      storeUrl: item.store_url || item.storeUrl,
+      locked: Boolean(item.locked),
+      lockedMessage: item.locked_message || item.lockedMessage,
+    };
+  }
+
+  function updateFamousStoresMeta(payload) {
+    var dateEl = $('famous-stores-date-label');
+    var sampleEl = $('famous-stores-sample-badge');
+    var disclaimerEl = $('famous-stores-disclaimer');
+
+    if (dateEl && payload) {
+      var parts = [];
+      if (payload.rank_date_label || payload.rank_date) {
+        parts.push(
+          t('dashboard.rankFor') +
+            ': ' +
+            String(payload.rank_date_label || payload.rank_date)
+        );
+      }
+      if (payload.updated_at) {
+        parts.push(t('dashboard.updatedAt') + ': ' + formatUtcLocal(payload.updated_at));
+      }
+      dateEl.textContent = parts.length ? parts.join(' · ') : '—';
+    }
+    if (sampleEl && payload) {
+      var count = Number(payload.sample_size != null ? payload.sample_size : 0);
+      sampleEl.textContent =
+        count.toLocaleString() + ' ' + t('famousStores.storesSample');
+    }
+    if (disclaimerEl && payload && payload.disclaimer) {
+      disclaimerEl.textContent = String(payload.disclaimer);
+    }
+  }
+
+  function renderFamousStoreRows(items, pro) {
+    var tbody = $('famous-stores-table-body');
+    var tableWrap = $('famous-stores-table-blur');
+    var loadingEl = $('famous-stores-loading');
+    var emptyEl = $('famous-stores-empty');
+
+    if (!tbody || !tableWrap) {
+      return;
+    }
+
+    if (loadingEl) {
+      loadingEl.classList.add('hidden');
+    }
+
+    if (!items || !items.length) {
+      tableWrap.classList.add('hidden');
+      if (emptyEl) {
+        emptyEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (emptyEl) {
+      emptyEl.classList.add('hidden');
+    }
+    tableWrap.classList.remove('hidden');
+
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var item = normalizeFamousStoreItem(items[i]);
+      var rankClass = item.rank <= 3 ? 'text-radar-cyan font-bold' : 'text-gray-400 font-bold';
+      var regionCell =
+        pro && item.region
+          ? '<td class="px-6 py-4 text-gray-400">' + escapeHtml(item.region) + '</td>'
+          : lockedCell(item.region, item.lockedMessage);
+      var yesterdayCell =
+        pro && isNumericValue(item.yesterdayResearchers)
+          ? '<td class="px-6 py-4 font-semibold text-emerald-400">' +
+            escapeHtml(Number(item.yesterdayResearchers).toLocaleString()) +
+            '</td>'
+          : lockedCell(item.yesterdayResearchers, item.lockedMessage);
+      var weekCell =
+        pro && isNumericValue(item.weekResearchers)
+          ? '<td class="px-6 py-4 text-gray-300">' +
+            escapeHtml(Number(item.weekResearchers).toLocaleString()) +
+            '</td>'
+          : lockedCell(item.weekResearchers, item.lockedMessage);
+      var urlCell =
+        pro && item.storeUrl && item.storeDomain !== 'Hidden'
+          ? '<td class="px-6 py-4"><a href="' +
+            escapeHtml(item.storeUrl) +
+            '" target="_blank" rel="noopener noreferrer" class="text-radar-cyan hover:underline">' +
+            escapeHtml(item.storeDomain || item.storeUrl) +
+            '</a></td>'
+          : lockedCell(item.storeDomain || item.storeUrl, item.lockedMessage);
+
+      html +=
+        '<tr class="hover:bg-white/[0.02]">' +
+        '<td class="px-6 py-4"><span class="' + rankClass + '">' + item.rank + '</span></td>' +
+        '<td class="px-6 py-4 font-medium text-gray-200">' + escapeHtml(item.displayName || '—') + '</td>' +
+        '<td class="px-6 py-4 text-gray-400">' + escapeHtml(item.platform || '—') + '</td>' +
+        regionCell +
+        yesterdayCell +
+        weekCell +
+        urlCell +
+        '</tr>';
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  function fetchFamousStores(deviceId, retryWithoutToken) {
+    var token = retryWithoutToken ? '' : getStoredAccessToken();
+    var url =
+      API_BASE +
+      '/api/v1/dashboard/trending/famous-stores?deviceId=' +
+      encodeURIComponent(deviceId) +
+      '&limit=25';
+    var headers = {
+      'Accept-Language': getAcceptLanguageHeader(),
+    };
+    if (token) {
+      headers.Authorization = 'Bearer ' + token;
+    }
+    return fetch(url, { headers: headers })
+      .then(function (response) {
+        if (response.status === 401 && token) {
+          clearStoredAccessToken();
+          return fetchFamousStores(deviceId, true);
+        }
+        if (!response.ok) {
+          return { ok: false, items: [] };
+        }
+        return response.json();
+      })
+      .catch(function () {
+        return { ok: false, items: [] };
+      });
+  }
+
+  function loadFamousStores(deviceId, pro) {
+    var loadingEl = $('famous-stores-loading');
+    if (loadingEl) {
+      loadingEl.classList.remove('hidden');
+    }
+
+    return fetchFamousStores(deviceId).then(function (payload) {
+      updateFamousStoresMeta(payload);
+      var viewerPro =
+        (payload.viewer && payload.viewer.is_pro) ||
+        payload.is_pro ||
+        payload.isPro ||
+        pro ||
+        isPro;
+      renderFamousStoreRows(payload.items || [], viewerPro);
+      return payload;
+    });
   }
 
   function fetchTrending(deviceId, retryWithoutToken) {
@@ -861,6 +1040,7 @@
         wireUpgradeButtons(deviceId);
       }
       loadTrending(deviceId, isPro);
+      loadFamousStores(deviceId, isPro);
     });
 
     var paymentPending = shouldPollAfterPayment();
@@ -895,6 +1075,9 @@
     },
     refreshTrending: function () {
       return loadTrending(getOrCreateDeviceId(), isPro);
+    },
+    refreshFamousStores: function () {
+      return loadFamousStores(getOrCreateDeviceId(), isPro);
     },
     buildCheckoutUrl: function () {
       return buildLemonCheckoutUrl(getOrCreateDeviceId());

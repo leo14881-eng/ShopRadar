@@ -150,6 +150,26 @@ function dbRun(sql, params) {
   });
 }
 
+function withTestDb(task) {
+  return new Promise(function (resolve, reject) {
+    const db = new sqlite3.Database(dbPathForTests());
+    Promise.resolve()
+      .then(function () {
+        return task(db);
+      })
+      .then(function (result) {
+        db.close(function () {
+          resolve(result);
+        });
+      })
+      .catch(function (err) {
+        db.close(function () {
+          reject(err);
+        });
+      });
+  });
+}
+
 function todayStr() {
   const now = new Date();
   return (
@@ -798,6 +818,78 @@ async function testTrendingAndIngest() {
       '&accessToken=invalid.token.here'
   );
   assert('v1 trending 无效 token → 401', v1BadToken.status === 401);
+
+  const v1FamousMissing = await request('/api/v1/dashboard/trending/famous-stores');
+  assert('v1 famous-stores 缺 deviceId → 400', v1FamousMissing.status === 400);
+
+  const v1FamousFree = await request(
+    '/api/v1/dashboard/trending/famous-stores?deviceId=' +
+      encodeURIComponent(IDS.free) +
+      '&limit=5'
+  );
+  if (v1FamousFree.status === 503) {
+    skip('v1 famous-stores Free 脱敏', 'Redis 不可用');
+  } else {
+    assert(
+      'v1 famous-stores Free → 200',
+      v1FamousFree.status === 200,
+      JSON.stringify(v1FamousFree.body)
+    );
+    assert(
+      'famous-stores kind',
+      v1FamousFree.body && v1FamousFree.body.kind === 'famous_stores',
+      JSON.stringify(v1FamousFree.body && v1FamousFree.body.kind)
+    );
+    const famousItem =
+      v1FamousFree.body && v1FamousFree.body.items && v1FamousFree.body.items[0];
+    if (famousItem) {
+      assert(
+        'Free 知名店铺字段脱敏',
+        famousItem.store_domain === 'Hidden' &&
+          famousItem.locked === true &&
+          Boolean(famousItem.display_name),
+        JSON.stringify(famousItem)
+      );
+    }
+    assert(
+      'famous-stores 样本数量',
+      Number(v1FamousFree.body && v1FamousFree.body.sample_size) >= 20,
+      String(v1FamousFree.body && v1FamousFree.body.sample_size)
+    );
+  }
+
+  const v1FamousPro = await request(
+    '/api/v1/dashboard/trending/famous-stores?deviceId=' +
+      encodeURIComponent(IDS.paid) +
+      '&limit=3'
+  );
+  if (v1FamousPro.status === 503) {
+    skip('v1 famous-stores Pro 完整数据', 'Redis 不可用');
+  } else {
+    const famousProItem =
+      v1FamousPro.body && v1FamousPro.body.items && v1FamousPro.body.items[0];
+    assert(
+      'Pro famous-stores is_pro=true',
+      v1FamousPro.body && v1FamousPro.body.is_pro === true,
+      JSON.stringify(v1FamousPro.body)
+    );
+    if (famousProItem) {
+      assert(
+        'Pro 可见 store_domain',
+        Boolean(
+          famousProItem.store_domain && famousProItem.store_domain !== 'Hidden'
+        ),
+        JSON.stringify(famousProItem)
+      );
+    }
+  }
+
+  const v1FamousBadToken = await request(
+    '/api/v1/dashboard/trending/famous-stores?deviceId=' +
+      encodeURIComponent(IDS.free) +
+      '&accessToken=invalid.token.here'
+  );
+  assert('v1 famous-stores 无效 token → 401', v1FamousBadToken.status === 401);
 }
 
 async function testRegressionFixes(secret) {

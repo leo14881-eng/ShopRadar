@@ -949,6 +949,7 @@ function startServer(db) {
       });
   });
 
+
   mountV1Routes(app, db, {
     enqueueDbWrite: enqueueDbWrite,
     dbGet: dbGet,
@@ -972,6 +973,7 @@ function startServer(db) {
     console.log('[ShopRadar Server] POST /api/ingest/products');
     console.log('[ShopRadar Server] GET  /api/trending?deviceId=...');
     console.log('[ShopRadar Server] GET  /api/v1/dashboard/trending');
+    console.log('[ShopRadar Server] GET  /api/v1/dashboard/trending/famous-stores');
     console.log('[ShopRadar Server] POST /api/v1/webhook/lemonsqueezy');
     console.log(
       '[ShopRadar Server] 白名单:',

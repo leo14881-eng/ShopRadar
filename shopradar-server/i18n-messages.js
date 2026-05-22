@@ -11,6 +11,8 @@ const LOCALE_MESSAGES = {
     hidden_url: 'Hidden',
     upgrade_unlock: 'Upgrade to Unlock',
     paywall_hint: 'Pro members see heat valuation, store URLs & attention trends.',
+    famous_stores_disclaimer:
+      'Curated famous DTC stores ranked by yesterday’s ShopRadar research heat—not verified platform or store sales.',
   },
   zh: {
     hidden_value: '已隐藏',
@@ -18,6 +20,8 @@ const LOCALE_MESSAGES = {
     hidden_url: '已隐藏',
     upgrade_unlock: '升级 Pro 解锁',
     paywall_hint: 'Pro 会员可查看热度估值、店铺域名与关注度变化。',
+    famous_stores_disclaimer:
+      '知名独立站样本榜，按 UTC 昨日 ShopRadar 研究热度排序，非平台或店铺真实销量。',
   },
   ar: {
     hidden_value: 'مخفي',

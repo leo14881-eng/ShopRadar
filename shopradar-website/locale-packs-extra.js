@@ -216,8 +216,8 @@
     },
     dashboard: {
       kicker: 'Pro ダッシュボードプレビュー',
-      title: '本日の研究ヒートランキング',
-      subtitle: 'ShopRadar 匿名閲覧の集計 · 毎時更新',
+      title: '昨日の研究ヒートランキング',
+      subtitle: '主順位: UTC 昨日の研究ヒート · 副順位: 7日間 · 毎時更新',
       proStatusLabel: 'Pro 状態',
       proStatusActive: 'Pro 有効',
       proStatusFree: '未加入',
@@ -543,8 +543,8 @@
     },
     dashboard: {
       kicker: 'Pro 大盤預覽',
-      title: '今日研究熱度排行榜',
-      subtitle: '基於 ShopRadar 用戶匿名瀏覽熱度的聚合排名 · 每小時更新',
+      title: '昨日研究熱度排行榜',
+      subtitle: '主排序：UTC 昨日研究熱度 · 次排序：近 7 日 · 每小時更新',
       proStatusLabel: 'Pro 狀態',
       proStatusActive: 'Pro 已開通',
       proStatusFree: '未開通 Pro',

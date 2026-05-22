@@ -1,14 +1,23 @@
 'use strict';
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
-const { connectRedis, invalidateTrendingCache, closeRedis } = require('../redis-client');
+const {
+  connectRedis,
+  invalidateTrendingCache,
+  invalidateFamousStoresCache,
+  closeRedis,
+} = require('../redis-client');
 
 connectRedis()
   .then(function () {
-    return invalidateTrendingCache();
+    return Promise.all([
+      invalidateTrendingCache(),
+      invalidateFamousStoresCache(),
+    ]);
   })
-  .then(function (cleared) {
-    console.log('trending cache cleared:', cleared);
+  .then(function (results) {
+    console.log('trending cache cleared:', results[0]);
+    console.log('famous-stores cache cleared:', results[1]);
   })
   .finally(function () {
     return closeRedis();

@@ -90,6 +90,20 @@
       0%, 100% { background-position: 0% 50%; }
       50% { background-position: 100% 50%; }
     }
+    .step-connector {
+      background: linear-gradient(90deg, rgba(34,211,238,0.35), rgba(139,92,246,0.35));
+    }
+    @media (max-width: 1023px) {
+      .step-connector {
+        width: 2px !important;
+        height: 2rem !important;
+        margin: 0 auto;
+        background: linear-gradient(180deg, rgba(34,211,238,0.35), rgba(139,92,246,0.35));
+      }
+    }
+    .ext-mock-panel {
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.55), 0 0 0 1px rgba(34,211,238,0.12);
+    }
     body.rtl { text-align: start; }
     body.rtl .paywall-blur table { direction: rtl; }
   </style>
@@ -109,13 +123,13 @@
           <span class="font-display font-bold text-xl tracking-tight">Shop<span class="text-radar-cyan">Radar</span></span>
         </a>
         <div class="hidden md:flex items-center gap-8 text-sm text-subtle">
-          <a href="#features" class="hover:text-radar-cyan transition-colors" data-i18n="nav.features">Features</a>
-          <a href="#dashboard" class="hover:text-radar-cyan transition-colors" data-i18n="nav.dashboard">Trending Dashboard</a>
+          <a href="#how-to-use" class="hover:text-radar-cyan transition-colors" data-i18n="nav.howTo">How to Use</a>
+          <a href="#leaderboards" class="hover:text-radar-cyan transition-colors" data-i18n="nav.dashboard">Trending Dashboard</a>
           <a href="#compare" class="hover:text-radar-cyan transition-colors" data-i18n="nav.compare">Compare</a>
         </div>
         <div class="flex items-center gap-3">
           <div id="sr-lang-selector"></div>
-          <a href="#dashboard" class="hidden sm:inline-flex text-sm text-muted hover:text-white transition-colors" data-i18n="nav.viewDemo">View Demo</a>
+          <a href="#how-to-use" class="hidden sm:inline-flex text-sm text-muted hover:text-white transition-colors" data-i18n="nav.viewDemo">View Demo</a>
           <a href="#" id="nav-upgrade-btn"
              class="js-upgrade-pro inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-radar-950 cta-shine hover:opacity-90 transition-opacity">
             Upgrade to Pro
@@ -161,7 +175,7 @@
             </svg>
             <span data-i18n="hero.ctaChrome">Add to Chrome — Free</span>
           </a>
-          <a href="#dashboard" class="inline-flex items-center gap-2 px-8 py-4 rounded-xl glass text-gray-200 font-semibold text-base hover:border-radar-cyan/30 transition-colors">
+          <a href="#how-to-use" class="inline-flex items-center gap-2 px-8 py-4 rounded-xl glass text-gray-200 font-semibold text-base hover:border-radar-cyan/30 transition-colors">
             <span data-i18n="hero.ctaDashboard">Explore Trending Dashboard</span>
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </a>
@@ -303,19 +317,187 @@
     </div>
   </section>
 
-  <!-- Trending Dashboard Paywall -->
+  <!-- Dashboard: Extension guide + Research heat rankings -->
   <section id="dashboard" class="py-24 lg:py-32 bg-radar-900/50 relative overflow-hidden">
     <div class="absolute inset-0 grid-bg opacity-50"></div>
     <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="text-center mb-12">
-        <p class="text-radar-violet text-sm font-semibold uppercase tracking-widest mb-3" data-i18n="dashboard.kicker">Pro Dashboard Preview</p>
-        <h2 class="font-display text-3xl sm:text-4xl font-bold mb-4" data-i18n="dashboard.title">
-          Today's Research Heat Rankings
+
+      <!-- Extension how-to (primary) -->
+      <div id="how-to-use" class="mb-20 lg:mb-28">
+        <div class="text-center mb-12 lg:mb-16">
+          <p class="text-radar-cyan text-sm font-semibold uppercase tracking-widest mb-3" data-i18n="guide.kicker">How it works</p>
+          <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold mb-4" data-i18n="guide.title">
+            Chrome Extension · Your store research engine
+          </h2>
+          <p class="text-subtle max-w-3xl mx-auto text-lg leading-relaxed" data-i18n="guide.subtitle">
+            Install once, open any Shopify or SFCC store, and inspect the full product catalog in seconds. Anonymous scans power the research heat rankings below.
+          </p>
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8">
+            <a href="https://chromewebstore.google.com/detail/shopradar/PLACEHOLDER" target="_blank" rel="noopener noreferrer"
+               class="js-chrome-store inline-flex items-center gap-2.5 px-7 py-3.5 rounded-xl bg-white text-radar-950 font-semibold text-sm hover:bg-gray-100 transition-colors shadow-lg shadow-white/10">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+              <span data-i18n="guide.ctaInstall">Install Extension — Free</span>
+            </a>
+            <a href="#leaderboards" class="inline-flex items-center gap-2 text-sm text-muted hover:text-radar-cyan transition-colors">
+              <span data-i18n="guide.ctaBoards">View live rankings ↓</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-10 lg:gap-14 items-start mb-14">
+          <!-- Steps -->
+          <ol class="space-y-0">
+            <li class="flex gap-4 lg:gap-5 pb-8 relative">
+              <div class="flex flex-col items-center flex-shrink-0">
+                <span class="w-10 h-10 rounded-xl bg-radar-cyan/15 border border-radar-cyan/30 flex items-center justify-center font-display font-bold text-radar-cyan text-sm">1</span>
+                <div class="step-connector hidden lg:block w-0.5 flex-1 mt-3 min-h-[2rem]"></div>
+              </div>
+              <div class="pt-1">
+                <h3 class="font-display font-semibold text-lg text-gray-100 mb-1.5" data-i18n="guide.step1Title">Install from Chrome Web Store</h3>
+                <p class="text-subtle text-sm leading-relaxed" data-i18n="guide.step1Desc">Click “Add to Chrome”. Free plan: 3 store scans per device per day. Pro unlocks unlimited scans + Excel export.</p>
+              </div>
+            </li>
+            <li class="flex gap-4 lg:gap-5 pb-8 relative">
+              <div class="flex flex-col items-center flex-shrink-0">
+                <span class="w-10 h-10 rounded-xl bg-radar-cyan/15 border border-radar-cyan/30 flex items-center justify-center font-display font-bold text-radar-cyan text-sm">2</span>
+                <div class="step-connector hidden lg:block w-0.5 flex-1 mt-3 min-h-[2rem]"></div>
+              </div>
+              <div class="pt-1">
+                <h3 class="font-display font-semibold text-lg text-gray-100 mb-1.5" data-i18n="guide.step2Title">Open a Shopify or SFCC store</h3>
+                <p class="text-subtle text-sm leading-relaxed" data-i18n="guide.step2Desc">Visit any independent store in Chrome — competitor shops, ad landing pages, or supplier sites you want to research.</p>
+              </div>
+            </li>
+            <li class="flex gap-4 lg:gap-5 pb-8 relative">
+              <div class="flex flex-col items-center flex-shrink-0">
+                <span class="w-10 h-10 rounded-xl bg-radar-cyan/15 border border-radar-cyan/30 flex items-center justify-center font-display font-bold text-radar-cyan text-sm">3</span>
+                <div class="step-connector hidden lg:block w-0.5 flex-1 mt-3 min-h-[2rem]"></div>
+              </div>
+              <div class="pt-1">
+                <h3 class="font-display font-semibold text-lg text-gray-100 mb-1.5" data-i18n="guide.step3Title">Click the ShopRadar icon</h3>
+                <p class="text-subtle text-sm leading-relaxed" data-i18n="guide.step3Desc">The side panel opens and auto-detects the platform. Product catalog loads from public store data — no login required on the target site.</p>
+              </div>
+            </li>
+            <li class="flex gap-4 lg:gap-5 pb-8 relative">
+              <div class="flex flex-col items-center flex-shrink-0">
+                <span class="w-10 h-10 rounded-xl bg-radar-violet/15 border border-radar-violet/30 flex items-center justify-center font-display font-bold text-radar-violet text-sm">4</span>
+                <div class="step-connector hidden lg:block w-0.5 flex-1 mt-3 min-h-[2rem]"></div>
+              </div>
+              <div class="pt-1">
+                <h3 class="font-display font-semibold text-lg text-gray-100 mb-1.5" data-i18n="guide.step4Title">Browse products &amp; pricing</h3>
+                <p class="text-subtle text-sm leading-relaxed" data-i18n="guide.step4Desc">Scroll the full catalog: titles, prices, compare-at prices, images and variants. No manual scraping or copy-paste.</p>
+              </div>
+            </li>
+            <li class="flex gap-4 lg:gap-5">
+              <div class="flex flex-col items-center flex-shrink-0">
+                <span class="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center font-display font-bold text-emerald-400 text-sm">5</span>
+              </div>
+              <div class="pt-1">
+                <h3 class="font-display font-semibold text-lg text-gray-100 mb-1.5" data-i18n="guide.step5Title">Export (Pro) &amp; feed the radar</h3>
+                <p class="text-subtle text-sm leading-relaxed" data-i18n="guide.step5Desc">Pro members export to Excel. Each scan anonymously contributes research heat to the global rankings on this page.</p>
+              </div>
+            </li>
+          </ol>
+
+          <!-- Extension mock -->
+          <div class="lg:sticky lg:top-24">
+            <div class="ext-mock-panel rounded-2xl glass overflow-hidden max-w-sm mx-auto lg:max-w-none">
+              <div class="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-radar-950/60">
+                <span class="font-display font-semibold text-sm" data-i18n="guide.mockTitle">ShopRadar</span>
+                <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
+              </div>
+              <div class="p-4 space-y-3">
+                <div class="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-center">
+                  <span class="text-xs font-medium text-emerald-400" data-i18n="guide.mockStatus">✓ Shopify detected</span>
+                  <p class="text-[10px] font-mono text-muted mt-1">gymshark.com</p>
+                </div>
+                <p class="text-[10px] uppercase tracking-widest text-muted px-1" data-i18n="guide.mockProducts">Product catalog</p>
+                <div id="ext-mock-product-list" class="space-y-2">
+                  <div class="flex items-center gap-2.5 p-2 rounded-lg bg-white/[0.03] border border-white/5">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500/25 to-radar-cyan/15 border border-white/8 flex items-center justify-center text-base flex-shrink-0" aria-hidden="true">🩱</div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-[11px] font-medium text-gray-100 leading-snug line-clamp-2" data-i18n="guide.mockItem1Title">Training Leggings</p>
+                      <p class="text-[10px] text-emerald-400 font-semibold mt-0.5" data-i18n="guide.mockItem1Price">$52.00</p>
+                    </div>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-radar-cyan/10 text-radar-cyan font-semibold flex-shrink-0 uppercase tracking-wide" data-i18n="guide.mockItem1Lang">EN</span>
+                  </div>
+                  <div class="flex items-center gap-2.5 p-2 rounded-lg bg-white/[0.03] border border-white/5">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-white/8 flex items-center justify-center text-base flex-shrink-0" aria-hidden="true">🎧</div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-[11px] font-medium text-gray-100 leading-snug line-clamp-2" data-i18n="guide.mockItem2Title">无线降噪耳机</p>
+                      <p class="text-[10px] text-emerald-400 font-semibold mt-0.5" data-i18n="guide.mockItem2Price">¥299</p>
+                    </div>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-semibold flex-shrink-0 tracking-wide" data-i18n="guide.mockItem2Lang">中文</span>
+                  </div>
+                  <div class="flex items-center gap-2.5 p-2 rounded-lg bg-white/[0.03] border border-white/5 opacity-90">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-white/8 flex items-center justify-center text-base flex-shrink-0" aria-hidden="true">🧘</div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-[11px] font-medium text-gray-100 leading-snug line-clamp-2" data-i18n="guide.mockItem3Title">Yogamatte Pro</p>
+                      <p class="text-[10px] text-emerald-400 font-semibold mt-0.5" data-i18n="guide.mockItem3Price">€34,99</p>
+                    </div>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-300 font-semibold flex-shrink-0 uppercase tracking-wide" data-i18n="guide.mockItem3Lang">DE</span>
+                  </div>
+                </div>
+                <p class="text-[9px] text-center text-muted/80 px-1" data-i18n="guide.mockMultiHint">Examples from EN · 中文 · DE storefronts</p>
+                <button type="button" class="w-full py-2.5 rounded-lg text-xs font-semibold text-radar-950 bg-gradient-to-r from-emerald-400 to-radar-cyan" data-i18n="guide.mockExport">Export to Excel (Pro)</button>
+                <p class="text-[10px] text-center text-muted" data-i18n="guide.mockFoot">Side panel · works on any Shopify / SFCC tab</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature pills -->
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="rounded-xl glass p-5 border border-radar-cyan/10 hover:border-radar-cyan/25 transition-colors">
+            <div class="w-9 h-9 rounded-lg bg-radar-cyan/10 flex items-center justify-center mb-3">
+              <svg class="w-5 h-5 text-radar-cyan" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
+            <h4 class="font-semibold text-sm text-gray-100 mb-1" data-i18n="guide.featDetectTitle">Auto-detect</h4>
+            <p class="text-xs text-muted leading-relaxed" data-i18n="guide.featDetectDesc">Shopify &amp; SFCC identified instantly from the current tab</p>
+          </div>
+          <div class="rounded-xl glass p-5 border border-radar-cyan/10 hover:border-radar-cyan/25 transition-colors">
+            <div class="w-9 h-9 rounded-lg bg-radar-cyan/10 flex items-center justify-center mb-3">
+              <svg class="w-5 h-5 text-radar-cyan" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+            </div>
+            <h4 class="font-semibold text-sm text-gray-100 mb-1" data-i18n="guide.featCatalogTitle">Full catalog</h4>
+            <p class="text-xs text-muted leading-relaxed" data-i18n="guide.featCatalogDesc">Public products.json + page data — titles, prices, images</p>
+          </div>
+          <div class="rounded-xl glass p-5 border border-emerald-500/10 hover:border-emerald-500/25 transition-colors">
+            <div class="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-3">
+              <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            </div>
+            <h4 class="font-semibold text-sm text-gray-100 mb-1" data-i18n="guide.featExportTitle">Excel export</h4>
+            <p class="text-xs text-muted leading-relaxed" data-i18n="guide.featExportDesc">Pro: one-click download for spreadsheet analysis</p>
+          </div>
+          <div class="rounded-xl glass p-5 border border-radar-violet/10 hover:border-radar-violet/25 transition-colors">
+            <div class="w-9 h-9 rounded-lg bg-radar-violet/10 flex items-center justify-center mb-3">
+              <svg class="w-5 h-5 text-radar-violet" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+            </div>
+            <h4 class="font-semibold text-sm text-gray-100 mb-1" data-i18n="guide.featHeatTitle">Feeds the radar</h4>
+            <p class="text-xs text-muted leading-relaxed" data-i18n="guide.featHeatDesc">Anonymous scans aggregate into community heat rankings</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leaderboards -->
+      <div id="leaderboards">
+      <div class="text-center mb-12 pt-4 border-t border-white/5">
+        <p class="text-radar-violet text-sm font-semibold uppercase tracking-widest mb-3 mt-12" data-i18n="guide.boardsKicker">Powered by extension research</p>
+        <h2 class="font-display text-3xl sm:text-4xl font-bold mb-4" data-i18n="guide.boardsTitle">
+          Global Research Heat Rankings
         </h2>
-        <p class="text-subtle" data-i18n="dashboard.subtitle">Aggregated from anonymous ShopRadar browsing · updated hourly</p>
+        <p class="text-subtle max-w-2xl mx-auto" data-i18n="guide.boardsSubtitle">See what ShopRadar users researched most yesterday. Rankings reflect anonymous research activity — not verified sales.</p>
+        <p class="mt-4 text-xs text-muted max-w-xl mx-auto" data-i18n="guide.boardsHint">Board empty? Scan Shopify stores with the extension to populate data.</p>
+      </div>
+
+      <div class="text-center mb-8">
+        <p class="text-radar-violet text-xs font-semibold uppercase tracking-widest mb-2" data-i18n="dashboard.kicker">Board 1 · Products</p>
+        <h3 class="font-display text-2xl sm:text-3xl font-bold mb-2" data-i18n="dashboard.title">
+          Yesterday's Research Heat Rankings
+        </h3>
+        <p class="text-subtle text-sm" data-i18n="dashboard.subtitle">Primary sort: UTC yesterday research heat · tie-break: 7-day heat · updated hourly</p>
 
         <p id="trending-disclaimer" class="mt-6 mx-auto max-w-3xl px-4 text-xs text-muted text-center leading-relaxed" data-i18n="dashboard.disclaimer">
-          Rankings reflect how often ShopRadar users browse each product—not verified sales or ad data. Revenue figures are algorithmic estimates for comparison only. Validate with your own research before listing.
+          Rankings use yesterday’s anonymous ShopRadar research heat (UTC)—not verified sales. 7-day heat breaks ties only.
         </p>
       </div>
 
@@ -405,6 +587,61 @@
           </div>
         </div>
       </div>
+
+      <!-- Famous stores leaderboard -->
+      <div class="mt-16 text-center mb-10">
+        <p class="text-radar-violet text-xs font-semibold uppercase tracking-widest mb-2" data-i18n="famousStores.kicker">Board 2 · Stores</p>
+        <h3 class="font-display text-2xl sm:text-3xl font-bold mb-3" data-i18n="famousStores.title">
+          Global Famous Stores · Yesterday Research Heat
+        </h2>
+        <p class="text-subtle text-sm" data-i18n="famousStores.subtitle">
+          Curated DTC brands ranked by UTC yesterday ShopRadar research heat — not verified platform sales.
+        </p>
+        <p id="famous-stores-disclaimer" class="mt-4 mx-auto max-w-3xl px-4 text-xs text-muted text-center leading-relaxed" data-i18n="famousStores.disclaimer">
+          Sample list of well-known stores. Rankings reflect anonymous researcher activity in ShopRadar, not official sales figures.
+        </p>
+      </div>
+
+      <div class="relative rounded-2xl glass overflow-hidden shadow-2xl shadow-black/40">
+        <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="w-2 h-2 rounded-full bg-radar-cyan animate-pulse"></span>
+            <span class="text-sm font-medium text-subtle" data-i18n="famousStores.liveRanking">Store Heat Ranking</span>
+            <span class="text-xs text-muted" id="famous-stores-date-label">Loading…</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-muted">
+            <span id="famous-stores-sample-badge" class="px-2 py-0.5 rounded bg-radar-violet/10 text-radar-violet">—</span>
+          </div>
+        </div>
+
+        <div class="relative">
+          <div id="famous-stores-loading" class="px-6 py-12 text-center text-muted text-sm" data-i18n="famousStores.loading">
+            Loading famous store rankings…
+          </div>
+          <div id="famous-stores-empty" class="hidden px-6 py-12 text-center text-muted text-sm" data-i18n="famousStores.empty">
+            No research activity for curated stores yet.
+          </div>
+          <div id="famous-stores-table-blur" class="hidden overflow-x-auto paywall-blur">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-muted border-b border-white/5">
+                  <th class="px-6 py-3 font-medium w-12" data-i18n="famousStores.thRank">#</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="famousStores.thStore">Store</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="famousStores.thPlatform">Platform</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="famousStores.thRegion">Region</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="famousStores.thYesterday">Yesterday Researchers</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="famousStores.thWeek">7d Researchers</th>
+                  <th class="px-6 py-3 font-medium" data-i18n="famousStores.thUrl">Store URL</th>
+                </tr>
+              </thead>
+              <tbody id="famous-stores-table-body" class="divide-y divide-white/5"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      </div><!-- /leaderboards -->
+
     </div>
   </section>
 
@@ -438,8 +675,8 @@
         <div>
           <h4 class="font-semibold text-gray-200 mb-4 text-sm uppercase tracking-wider" data-i18n="footer.product">Product</h4>
           <ul class="space-y-3 text-sm text-muted">
-            <li><a href="#features" class="hover:text-radar-cyan transition-colors" data-i18n="footer.extLink">Chrome Extension</a></li>
-            <li><a href="#dashboard" class="hover:text-radar-cyan transition-colors" data-i18n="footer.dashLink">Trending Dashboard</a></li>
+            <li><a href="#how-to-use" class="hover:text-radar-cyan transition-colors" data-i18n="footer.howTo">How to Use</a></li>
+            <li><a href="#leaderboards" class="hover:text-radar-cyan transition-colors" data-i18n="footer.dashLink">Trending Dashboard</a></li>
             <li><a href="#compare" class="hover:text-radar-cyan transition-colors" data-i18n="footer.compareLink">Feature Comparison</a></li>
             <li>
               <a href="#" class="js-upgrade-pro hover:text-radar-cyan transition-colors" data-i18n="footer.pricing">
