@@ -22,6 +22,8 @@
   var lastProExpiresAt = '';
   var pollTimer = null;
   var leaderboardFetchGen = 0;
+  var extensionSyncBound = false;
+  var lastKnownExtDeviceId = '';
 
   function bumpLeaderboardFetchGen() {
     leaderboardFetchGen += 1;
@@ -67,6 +69,7 @@
   }
 
   function wireUpgradeButtons(deviceId) {
+    updateDeviceIdDisplay(deviceId);
     var checkoutUrl = Auth.buildLemonCheckoutUrl(deviceId);
     var buttons = document.querySelectorAll('.js-upgrade-pro');
     for (var i = 0; i < buttons.length; i++) {
@@ -81,6 +84,236 @@
         el.classList.add('opacity-50', 'pointer-events-none');
         el.title = 'Checkout URL not configured';
       }
+    }
+  }
+
+  function truncateDeviceId(id) {
+    var value = String(id || '').trim();
+    if (value.length <= 16) {
+      return value;
+    }
+    return value.slice(0, 8) + '…' + value.slice(-4);
+  }
+
+  function updateDeviceIdDisplay(deviceId) {
+    var full = String(deviceId || '').trim();
+    var short = full ? truncateDeviceId(full) : '—';
+    var mainEl = $('dashboard-device-id');
+    var paywallEl = $('paywall-device-id');
+    if (mainEl) {
+      mainEl.textContent = short;
+      mainEl.title = full || '';
+    }
+    if (paywallEl) {
+      paywallEl.textContent = short;
+      paywallEl.title = full || '';
+    }
+  }
+
+  function setSyncStatusMessage(text, isError) {
+    var el = $('dashboard-sync-status');
+    if (!el) {
+      return;
+    }
+    if (!text) {
+      el.textContent = '';
+      el.classList.add('hidden');
+      el.classList.remove('text-emerald-400', 'text-amber-400');
+      return;
+    }
+    el.textContent = text;
+    el.classList.remove('hidden', 'text-emerald-400', 'text-amber-400');
+    el.classList.add(isError ? 'text-amber-400' : 'text-emerald-400');
+  }
+
+  function updateSyncHintVisible(show) {
+    var hint = $('dashboard-sync-hint');
+    if (!hint) {
+      return;
+    }
+    hint.classList.toggle('hidden', !show);
+  }
+
+  function requestExtensionSync() {
+    try {
+      window.postMessage({ type: 'SR_REQUEST_DEVICE_SYNC', source: 'shopradar-website' }, '*');
+    } catch (postErr) {
+      /* ignore */
+    }
+  }
+
+  function waitForDeviceSyncedEvent(timeoutMs) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = null;
+      function finish(detail) {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer) {
+          clearTimeout(timer);
+        }
+        resolve(detail || null);
+      }
+      window.addEventListener(
+        'shopradar:device-synced',
+        function (event) {
+          finish(event && event.detail ? event.detail : null);
+        },
+        { once: true }
+      );
+      timer = setTimeout(function () {
+        finish(null);
+      }, timeoutMs || 10000);
+    });
+  }
+
+  function applyDeviceSyncDetail(detail, deviceIdRef) {
+    if (!detail || !detail.deviceId) {
+      return deviceIdRef;
+    }
+    var syncedId = String(detail.deviceId).trim();
+    if (detail.extDeviceId) {
+      lastKnownExtDeviceId = String(detail.extDeviceId).trim();
+    }
+    if (syncedId && !Auth.readQueryDeviceId()) {
+      try {
+        localStorage.setItem(Auth.STORAGE_DEVICE_ID, syncedId);
+      } catch (storageErr) {
+        /* ignore */
+      }
+    }
+    if (detail.payload) {
+      Auth.saveAccessTokenFromPayload(detail.payload);
+    }
+    if (detail.payloadDefinite) {
+      if (detail.isPro) {
+        Auth.persistProFlag(true);
+      } else {
+        Auth.persistProFlag(false);
+      }
+    }
+    deviceIdRef = syncedId;
+    wireUpgradeButtons(deviceIdRef);
+    if (detail.isPro) {
+      applyProState(true, detail.proExpiresAt || lastProExpiresAt);
+      updateSyncHintVisible(false);
+      setSyncStatusMessage('');
+    } else if (detail.payloadDefinite) {
+      refreshProStatus(deviceIdRef).catch(function () {});
+    } else {
+      refreshProStatus(deviceIdRef).catch(function () {});
+    }
+    return deviceIdRef;
+  }
+
+  function triggerExtensionSync(deviceId, options) {
+    var opts = options || {};
+    var syncBtn = $('dashboard-sync-extension-btn');
+    var paywallBtn = $('paywall-sync-extension-btn');
+    if (syncBtn) {
+      syncBtn.disabled = true;
+    }
+    if (paywallBtn) {
+      paywallBtn.disabled = true;
+    }
+    if (!opts.quiet) {
+      setSyncStatusMessage(t('dashboard.syncExtensionWorking'), false);
+    }
+
+    requestExtensionSync();
+    setTimeout(requestExtensionSync, 400);
+
+    return waitForDeviceSyncedEvent(opts.timeoutMs || 10000).then(function (detail) {
+      if (syncBtn) {
+        syncBtn.disabled = false;
+      }
+      if (paywallBtn) {
+        paywallBtn.disabled = false;
+      }
+
+      if (detail && detail.extensionAvailable) {
+        deviceId = applyDeviceSyncDetail(detail, deviceId);
+        if (detail.isPro) {
+          if (!opts.quiet) {
+            setSyncStatusMessage(t('dashboard.syncExtensionSuccess'), false);
+          }
+          return { ok: true, deviceId: deviceId, isPro: true };
+        }
+        if (detail.idMerged) {
+          return refreshProStatus(deviceId).then(function (pro) {
+            if (pro) {
+              if (!opts.quiet) {
+                setSyncStatusMessage(t('dashboard.syncExtensionSuccess'), false);
+              }
+              updateSyncHintVisible(false);
+              return { ok: true, deviceId: deviceId, isPro: true };
+            }
+            if (!opts.quiet) {
+              setSyncStatusMessage('', false);
+            }
+            updateSyncHintVisible(true);
+            return { ok: false, deviceId: deviceId, isPro: false };
+          });
+        }
+      }
+
+      if (!opts.quiet) {
+        setSyncStatusMessage(t('dashboard.syncExtensionNoExtension'), true);
+      }
+      updateSyncHintVisible(true);
+      return { ok: false, deviceId: deviceId, isPro: false, noExtension: true };
+    });
+  }
+
+  function bindDeviceIdBar(getDeviceId) {
+    if (extensionSyncBound) {
+      return;
+    }
+    extensionSyncBound = true;
+
+    var copyBtn = $('dashboard-copy-device-id');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var id = getDeviceId();
+        if (!id) {
+          return;
+        }
+        var copied = false;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(id).then(function () {
+            setSyncStatusMessage(t('dashboard.deviceIdCopied'), false);
+          }).catch(function () {});
+          copied = true;
+        }
+        if (!copied) {
+          try {
+            var ta = document.createElement('textarea');
+            ta.value = id;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            setSyncStatusMessage(t('dashboard.deviceIdCopied'), false);
+          } catch (copyErr) {
+            /* ignore */
+          }
+        }
+      });
+    }
+
+    function onSyncClick() {
+      triggerExtensionSync(getDeviceId(), { quiet: false });
+    }
+
+    var syncBtn = $('dashboard-sync-extension-btn');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', onSyncClick);
+    }
+    var paywallSyncBtn = $('paywall-sync-extension-btn');
+    if (paywallSyncBtn) {
+      paywallSyncBtn.addEventListener('click', onSyncClick);
     }
   }
 
@@ -604,8 +837,7 @@
         (payload.viewer && payload.viewer.is_pro) ||
         payload.is_pro ||
         payload.isPro ||
-        pro ||
-        isPro;
+        false;
       renderFamousStoreRows(payload.items || [], viewerPro);
       return payload;
     });
@@ -656,8 +888,7 @@
         (payload.viewer && payload.viewer.is_pro) ||
         payload.is_pro ||
         payload.isPro ||
-        pro ||
-        isPro;
+        false;
       renderTrendingRows(payload.items || [], viewerPro);
       return payload;
     });
@@ -724,24 +955,28 @@
       pollTimer = null;
     }
 
-    var wasPaymentPending = true;
-
     Auth.pollUntilProActivated(deviceId, {
       timeoutMs: 28000,
       intervalMs: 2000,
-    }).then(function (activated) {
-      if (activated) {
-        applyProState(true, lastProExpiresAt);
+    }).then(function (result) {
+      if (result && result.activated) {
+        applyProState(true, result.proExpiresAt || '');
         var dashboard = $('dashboard');
         if (dashboard) {
           dashboard.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
+        updateSyncHintVisible(false);
         return;
       }
-      refreshProStatus(deviceId, {
-        preserveOptimistic: Auth.loadProFlagFromStorage() || wasPaymentPending,
-        paymentPending: wasPaymentPending,
-      }).catch(function () {});
+      Auth.persistProFlag(false);
+      refreshProStatus(deviceId).then(function (pro) {
+        if (!pro) {
+          updateSyncHintVisible(true);
+          triggerExtensionSync(deviceId, { quiet: true });
+        }
+      }).catch(function () {
+        updateSyncHintVisible(true);
+      });
     });
   }
 
@@ -780,34 +1015,32 @@
   function waitForExtensionDeviceSync() {
     return new Promise(function (resolve) {
       var settled = false;
+      var syncDetail = null;
       function finish() {
         if (!settled) {
           settled = true;
-          resolve();
-        }
-      }
-      function requestExtensionSync() {
-        try {
-          window.postMessage({ type: 'SR_REQUEST_DEVICE_SYNC', source: 'shopradar-website' }, '*');
-        } catch (postErr) {
-          /* ignore */
+          resolve(syncDetail);
         }
       }
       window.addEventListener(
         'shopradar:device-synced',
         function (event) {
-          var detail = event && event.detail ? event.detail : {};
-          var syncedId = detail.deviceId ? String(detail.deviceId).trim() : '';
-          if (syncedId && !Auth.readQueryDeviceId()) {
+          syncDetail = event && event.detail ? event.detail : null;
+          if (syncDetail && syncDetail.extDeviceId) {
+            lastKnownExtDeviceId = String(syncDetail.extDeviceId).trim();
+          }
+          if (syncDetail && syncDetail.deviceId && !Auth.readQueryDeviceId()) {
             try {
-              localStorage.setItem(Auth.STORAGE_DEVICE_ID, syncedId);
+              localStorage.setItem(Auth.STORAGE_DEVICE_ID, String(syncDetail.deviceId).trim());
             } catch (storageErr) {
               /* ignore */
             }
           }
-          if (detail.payload) {
-            Auth.saveAccessTokenFromPayload(detail.payload);
-            if (detail.isPro) {
+          if (syncDetail && syncDetail.payload) {
+            Auth.saveAccessTokenFromPayload(syncDetail.payload);
+          }
+          if (syncDetail && syncDetail.payloadDefinite) {
+            if (syncDetail.isPro) {
               Auth.persistProFlag(true);
             } else {
               Auth.persistProFlag(false);
@@ -819,43 +1052,46 @@
       );
       requestExtensionSync();
       setTimeout(requestExtensionSync, 800);
-      setTimeout(finish, 5000);
+      setTimeout(requestExtensionSync, 2500);
+      setTimeout(finish, 10000);
     });
   }
 
   function init() {
-    waitForExtensionDeviceSync().then(function () {
-      runDashboardInit();
+    waitForExtensionDeviceSync().then(function (initialSync) {
+      runDashboardInit(initialSync);
     });
   }
 
-  function runDashboardInit() {
+  function runDashboardInit(initialSync) {
     var deviceId = Auth.getOrCreateDeviceId({ deferCreate: true });
     if (!deviceId) {
       deviceId = Auth.getOrCreateDeviceId();
     }
+    if (initialSync && initialSync.extDeviceId) {
+      lastKnownExtDeviceId = String(initialSync.extDeviceId).trim();
+    }
+    if (initialSync && initialSync.isPro) {
+      lastProExpiresAt = initialSync.proExpiresAt || lastProExpiresAt;
+    }
     wireUpgradeButtons(deviceId);
     bindClaimProForm();
+    bindDeviceIdBar(function () {
+      return deviceId;
+    });
     wireChromeStoreLinks();
 
     function onDeviceResynced(event) {
-      var detail = event && event.detail ? event.detail : {};
-      var syncedId = detail.deviceId ? String(detail.deviceId).trim() : '';
-      if (!syncedId) {
-        return;
-      }
-      deviceId = syncedId;
-      wireUpgradeButtons(deviceId);
-      if (detail.isPro) {
-        applyProState(true, detail.proExpiresAt || lastProExpiresAt);
-      } else {
-        refreshProStatus(deviceId).catch(function () {});
-      }
+      deviceId = applyDeviceSyncDetail(
+        event && event.detail ? event.detail : null,
+        deviceId
+      );
     }
     window.addEventListener('shopradar:device-synced', onDeviceResynced);
 
     document.addEventListener('shopradar:locale', function () {
       updateNavUpgrade(isPro);
+      updateDeviceIdDisplay(deviceId);
       if (!isPro) {
         wireUpgradeButtons(deviceId);
       }
@@ -866,7 +1102,9 @@
     var paymentPending = shouldPollAfterPayment();
     var optimisticPro = Auth.loadProFlagFromStorage();
 
-    if (optimisticPro || paymentPending) {
+    if (initialSync && initialSync.isPro) {
+      applyProState(true, initialSync.proExpiresAt || lastProExpiresAt);
+    } else if (optimisticPro || paymentPending) {
       applyProState(true, lastProExpiresAt);
     } else {
       setPaywallLocked(true);
@@ -878,6 +1116,27 @@
     }).then(function (pro) {
       if (!pro && paymentPending) {
         pollProAfterPayment(deviceId);
+      } else if (!pro && !paymentPending) {
+        if (
+          lastKnownExtDeviceId &&
+          deviceId &&
+          lastKnownExtDeviceId !== deviceId
+        ) {
+          updateSyncHintVisible(true);
+        }
+        setTimeout(function () {
+          if (!isPro) {
+            triggerExtensionSync(deviceId, { quiet: true }).then(function (result) {
+              if (result && result.isPro) {
+                deviceId = result.deviceId || deviceId;
+              } else if (!result || !result.noExtension) {
+                updateSyncHintVisible(true);
+              }
+            });
+          }
+        }, 1500);
+      } else {
+        updateSyncHintVisible(false);
       }
       cleanPaymentQueryFromUrl();
     });
@@ -902,6 +1161,9 @@
     },
     buildCheckoutUrl: function () {
       return Auth.buildLemonCheckoutUrl(Auth.getOrCreateDeviceId());
+    },
+    syncWithExtension: function () {
+      return triggerExtensionSync(Auth.getOrCreateDeviceId(), { quiet: false });
     },
   };
 })();

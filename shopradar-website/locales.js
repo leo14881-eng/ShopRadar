@@ -160,6 +160,20 @@ var SHOPRADAR_LOCALES = {
       claimProSuccess: 'Pro restored!',
       claimProEmptyEmail: 'Please enter your checkout email',
       claimProNetworkError: 'Network error. Please try again.',
+      deviceIdLabel: 'Device ID',
+      deviceIdCopy: 'Copy',
+      deviceIdCopied: 'Copied ✓',
+      syncExtensionBtn: 'Sync with extension',
+      syncExtensionWorking: 'Syncing…',
+      syncExtensionSuccess: 'Synced with extension',
+      syncExtensionNoExtension:
+        'Extension not detected. Install ShopRadar in this browser or restore Pro by email.',
+      syncExtensionHint:
+        'Paid in the Chrome extension but Pro not showing here? Click “Sync with extension” (same browser, extension enabled) or restore with your checkout email below.',
+      paywallDeviceHint:
+        'Pro is tied to your Device ID. If you paid in the extension, sync IDs or use email restore below.',
+      claimProOneDeviceNote:
+        'One subscription, one active device. Restore moves Pro to this Device ID; other devices must restore again.',
     },
     famousStores: {
       kicker: 'Board 2 · Stores',
@@ -350,6 +364,20 @@ var SHOPRADAR_LOCALES = {
       claimProSuccess: 'Pro 已恢复！',
       claimProEmptyEmail: '请输入付款邮箱',
       claimProNetworkError: '网络错误，请稍后重试',
+      deviceIdLabel: 'Device ID',
+      deviceIdCopy: '复制',
+      deviceIdCopied: '已复制 ✓',
+      syncExtensionBtn: '与扩展同步',
+      syncExtensionWorking: '同步中…',
+      syncExtensionSuccess: '已与扩展同步',
+      syncExtensionNoExtension:
+        '未检测到扩展。请在本浏览器安装 ShopRadar，或使用下方邮箱恢复 Pro。',
+      syncExtensionHint:
+        '已在 Chrome 插件付款但此处未显示 Pro？请点击「与扩展同步」（需同一浏览器且扩展已启用），或在下方用付款邮箱恢复。',
+      paywallDeviceHint:
+        'Pro 绑定在 Device ID 上。若在插件中付款，请先同步 ID 或使用下方邮箱恢复。',
+      claimProOneDeviceNote:
+        '一个订阅同时仅在一台设备生效。在此恢复会将 Pro 绑定到当前 Device ID，其他设备需重新邮箱恢复。',
     },
     famousStores: {
       kicker: '第二榜 · 店铺',
@@ -477,6 +505,8 @@ var SHOPRADAR_LOCALES = {
       paywallSocial: 'للبائعين الذين يبحثون عن المتاجر قبل الإدراج.',
       paywallCta: 'ترقية Pro عبر Lemon Squeezy',
       paywallFoot: 'دفع آمن · إلغاء anytime · وصول فوري',
+      claimProOneDeviceNote:
+        'اشتراك واحد، جهاز نشط واحد. الاستعادة تنقل Pro إلى معرّف الجهاز هذا؛ يجب على الأجهزة الأخرى الاستعادة مجددًا.',
     },
     footer: {
       desc: 'ذكاء منتجات Shopify للبائعين العابرين للحدود.',
@@ -584,6 +614,8 @@ var SHOPRADAR_LOCALES = {
       paywallSocial: 'Für Verkäufer, die Shops recherchieren, bevor sie listen.',
       paywallCta: 'Pro upgraden mit Lemon Squeezy',
       paywallFoot: 'Sichere Zahlung · Jederzeit kündbar',
+      claimProOneDeviceNote:
+        'Ein Abo, ein aktives Gerät. Wiederherstellung verschiebt Pro auf diese Device-ID; andere Geräte müssen erneut wiederherstellen.',
     },
     footer: {
       desc: 'Shopify-Produktintelligenz für Cross-Border-Händler.',
@@ -691,6 +723,8 @@ var SHOPRADAR_LOCALES = {
       paywallSocial: 'Pour les vendeurs qui analysent les boutiques avant de lister.',
       paywallCta: 'Passer Pro avec Lemon Squeezy',
       paywallFoot: 'Paiement sécurisé · Annulation anytime',
+      claimProOneDeviceNote:
+        'Un abonnement, un appareil actif. La restauration déplace Pro vers cet ID appareil ; les autres appareils doivent restaurer à nouveau.',
     },
     footer: {
       desc: 'Intelligence produits Shopify pour vendeurs cross-border.',

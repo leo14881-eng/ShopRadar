@@ -243,11 +243,13 @@
 
   function pollUntilProActivated(deviceId, options) {
     var opts = options || {};
+    var lastProExpiresAt = '';
     return pollUntil(
       function () {
         return fetchProStatus(deviceId).then(function (status) {
           if (status.isPro) {
             persistProFlag(true);
+            lastProExpiresAt = status.proExpiresAt || '';
             return true;
           }
           return false;
@@ -258,7 +260,12 @@
         intervalMs: opts.intervalMs || 2000,
         onWaiting: opts.onWaiting,
       }
-    );
+    ).then(function (activated) {
+      return {
+        activated: Boolean(activated),
+        proExpiresAt: lastProExpiresAt,
+      };
+    });
   }
 
   function pollUntil(tryOnce, options) {

@@ -48,7 +48,7 @@
           return;
         }
 
-        var activated = await Auth.pollUntilProActivated(deviceId, {
+        var pollResult = await Auth.pollUntilProActivated(deviceId, {
           timeoutMs: 30000,
           intervalMs: 2000,
           onWaiting: function () {
@@ -57,6 +57,7 @@
             }
           },
         });
+        var activated = pollResult && pollResult.activated;
 
         if (statusEl) {
           statusEl.textContent = activated

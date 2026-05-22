@@ -85,6 +85,8 @@ const UI_TEXT_FALLBACK = {
   claimProSuccess: 'Pro restored!',
   claimProEmptyEmail: 'Please enter your checkout email',
   claimProNetworkError: 'Network error. Please try again.',
+  claimProOneDeviceNote:
+    'One subscription, one active device. Restore moves Pro to this Device ID; other devices need to restore again to use Pro.',
   paymentPendingHint:
     'If you just paid, wait 1–2 minutes then tap “Refresh Pro status”.',
   authServerOffline:
@@ -940,6 +942,10 @@ function applyUiStrings() {
   if (claimLabelEl) {
     claimLabelEl.textContent = UI_TEXT.claimProLabel;
   }
+  var claimNoteEl = document.getElementById('claim-pro-note');
+  if (claimNoteEl) {
+    claimNoteEl.textContent = UI_TEXT.claimProOneDeviceNote;
+  }
   if (idleHeroTitleEl) {
     idleHeroTitleEl.textContent = UI_TEXT.idleHeroTitleReady;
   }
@@ -1765,6 +1771,7 @@ async function claimProWithEmail(email) {
       await persistProFlag(true);
       await clearPaymentPending();
       await saveAccessTokenFromPayload(data);
+      updateProStatusBar(true);
       hideLimitOverlay();
       schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
       return { ok: true, msg: UI_TEXT.claimProSuccess };
@@ -3039,7 +3046,7 @@ function schedulePanelRefreshDebounced() {
     const runOptions = pendingPanelRefreshOptions || {};
     pendingPanelRefreshOptions = null;
 
-    if (runOptions.softRefresh && stateSuccess.classList.contains('active')) {
+    if (runOptions.softRefresh && !runOptions.forceRecheck && stateSuccess.classList.contains('active')) {
       getActiveBrowserTab()
         .then(function (tab) {
           const domain = tab?.url ? extractDomain(tab.url) : '';
@@ -3299,7 +3306,11 @@ async function runInitWithWatchdog(options) {
   } finally {
     initInProgress = false;
     clearTimeout(watchdogId);
+    var queuedRefresh = pendingPanelRefreshOptions;
     pendingPanelRefreshOptions = null;
+    if (queuedRefresh) {
+      schedulePanelRefresh(queuedRefresh);
+    }
   }
 }
 

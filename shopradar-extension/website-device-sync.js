@@ -39,6 +39,10 @@
     }
   }
 
+  function isPayloadDefinite(payload) {
+    return Boolean(payload && typeof payload.isPro === 'boolean');
+  }
+
   function fetchProPayload(deviceId) {
     if (!deviceId) {
       return Promise.resolve(null);
@@ -54,6 +58,9 @@
             return null;
           })
           .then(function (data) {
+            if (!data || typeof data.isPro !== 'boolean') {
+              return null;
+            }
             return data;
           });
       })
@@ -66,16 +73,19 @@
     return Auth.tokenExpiresAt(payload);
   }
 
-  function publishToWebsite(deviceId, payload) {
+  function publishToWebsite(deviceId, payload, meta) {
     if (!deviceId) {
       return;
     }
+    var info = meta || {};
     try {
       localStorage.setItem(STORAGE_DEVICE, deviceId);
-      if (payload && payload.isPro) {
-        localStorage.setItem(STORAGE_PRO, '1');
-      } else {
-        localStorage.removeItem(STORAGE_PRO);
+      if (isPayloadDefinite(payload)) {
+        if (payload.isPro) {
+          localStorage.setItem(STORAGE_PRO, '1');
+        } else {
+          localStorage.removeItem(STORAGE_PRO);
+        }
       }
       if (payload && payload.isPro && payload.accessToken) {
         sessionStorage.setItem(STORAGE_TOKEN, String(payload.accessToken));
@@ -83,7 +93,7 @@
         if (exp) {
           sessionStorage.setItem(STORAGE_TOKEN_EXP, String(exp));
         }
-      } else {
+      } else if (isPayloadDefinite(payload) && !payload.isPro) {
         try {
           sessionStorage.removeItem(STORAGE_TOKEN);
           sessionStorage.removeItem(STORAGE_TOKEN_EXP);
@@ -103,6 +113,11 @@
             proExpiresAt:
               payload && payload.proExpiresAt ? String(payload.proExpiresAt) : '',
             payload: payload || null,
+            payloadDefinite: isPayloadDefinite(payload),
+            extDeviceId: info.extDeviceId || '',
+            webDeviceId: info.webDeviceId || '',
+            idMerged: Boolean(info.idMerged),
+            extensionAvailable: true,
           },
         })
       );
@@ -133,6 +148,7 @@
       return;
     }
     var nextPro = Boolean(payload && payload.isPro);
+    var payloadKnown = isPayloadDefinite(payload);
 
     chrome.storage.local.get([STORAGE_DEVICE, STORAGE_PRO], function (current) {
       if (chrome.runtime.lastError) {
@@ -144,12 +160,10 @@
           : '';
       var curPro = Boolean(current && current[STORAGE_PRO]);
 
-      // 勿用官网/URL 上的非 Pro ID 覆盖扩展里已有 ID（避免付款 Device ID 被冲掉）
       if (curId && curId !== deviceId && !nextPro) {
         return;
       }
-      // 勿将未付费的官网随机 ID 写入扩展（content script 与 popup 竞态时）
-      if (!curId && !nextPro) {
+      if (!curId && !nextPro && payloadKnown) {
         return;
       }
 
@@ -160,7 +174,7 @@
         }
         if (nextPro) {
           patch[STORAGE_PRO] = true;
-        } else if (!paymentPending) {
+        } else if (payloadKnown && !paymentPending) {
           patch[STORAGE_PRO] = false;
         }
 
@@ -236,32 +250,49 @@
   }
 
   function pickCanonicalId(extId, webId, extPayload, webPayload) {
-    var extPro = Boolean(extPayload && extPayload.isPro);
-    var webPro = Boolean(webPayload && webPayload.isPro);
+    var extKnown = isPayloadDefinite(extPayload);
+    var webKnown = isPayloadDefinite(webPayload);
+    var extPro = extKnown && extPayload.isPro;
+    var webPro = webKnown && webPayload.isPro;
+    var idMerged = Boolean(extId && webId && extId !== webId);
 
     if (extId && webId && extId === webId) {
-      return { id: extId, payload: extPro || webPro ? extPayload || webPayload : extPayload };
+      return {
+        id: extId,
+        payload: extPro || webPro ? extPayload || webPayload : extPayload || webPayload,
+        idMerged: false,
+      };
     }
-    if (webPro && !extPro && webId) {
-      return { id: webId, payload: webPayload };
+    if (webPro && webId) {
+      return { id: webId, payload: webPayload, idMerged: idMerged };
     }
     if (extPro && extId) {
-      return { id: extId, payload: extPayload };
+      return { id: extId, payload: extPayload, idMerged: idMerged };
+    }
+    if (extKnown && extId) {
+      return { id: extId, payload: extPayload, idMerged: idMerged };
+    }
+    if (webKnown && webId) {
+      return { id: webId, payload: webPayload, idMerged: idMerged };
     }
     if (extId) {
-      return { id: extId, payload: extPayload };
+      return { id: extId, payload: extPayload, idMerged: idMerged };
     }
     if (webId) {
-      return { id: webId, payload: webPayload };
+      return { id: webId, payload: webPayload, idMerged: idMerged };
     }
-    return { id: '', payload: null };
+    return { id: '', payload: null, idMerged: false };
   }
 
   function reconcile(extId, webId) {
     var queryId = readQueryDeviceId();
     if (queryId) {
       fetchProPayload(queryId).then(function (payload) {
-        publishToWebsite(queryId, payload);
+        publishToWebsite(queryId, payload, {
+          extDeviceId: extId,
+          webDeviceId: webId || queryId,
+          idMerged: Boolean(extId && extId !== queryId),
+        });
         publishToExtension(queryId, payload);
       });
       return;
@@ -277,8 +308,11 @@
         if (!picked.id) {
           return;
         }
-        publishToWebsite(picked.id, picked.payload);
-        // 扩展已有 ID 且未确认 Pro 时，不把官网随机 ID 推回扩展
+        publishToWebsite(picked.id, picked.payload, {
+          extDeviceId: extId,
+          webDeviceId: webId,
+          idMerged: picked.idMerged,
+        });
         if (extId && picked.id !== extId && !Boolean(picked.payload && picked.payload.isPro)) {
           return;
         }
@@ -287,19 +321,22 @@
     );
   }
 
+  function runReconcileFromStorage() {
+    chrome.storage.local.get([STORAGE_DEVICE], function (result) {
+      if (chrome.runtime.lastError) {
+        return;
+      }
+      var extId =
+        result && result[STORAGE_DEVICE] ? String(result[STORAGE_DEVICE]).trim() : '';
+      reconcile(extId, readWebDeviceId());
+    });
+  }
+
   if (!chrome.storage || !chrome.storage.local) {
     return;
   }
 
-  chrome.storage.local.get([STORAGE_DEVICE], function (result) {
-    if (chrome.runtime.lastError) {
-      return;
-    }
-    var extId =
-      result && result[STORAGE_DEVICE] ? String(result[STORAGE_DEVICE]).trim() : '';
-    var webId = readWebDeviceId();
-    reconcile(extId, webId);
-  });
+  runReconcileFromStorage();
 
   try {
     window.addEventListener('message', function (event) {
@@ -310,16 +347,7 @@
       if (!data || data.type !== 'SR_REQUEST_DEVICE_SYNC') {
         return;
       }
-      chrome.storage.local.get([STORAGE_DEVICE], function (result) {
-        if (chrome.runtime.lastError) {
-          return;
-        }
-        var extId =
-          result && result[STORAGE_DEVICE]
-            ? String(result[STORAGE_DEVICE]).trim()
-            : '';
-        reconcile(extId, readWebDeviceId());
-      });
+      runReconcileFromStorage();
     });
   } catch (msgBridgeErr) {
     /* ignore */
@@ -330,53 +358,25 @@
       if (!message || message.type !== 'SR_REQUEST_DEVICE_SYNC') {
         return { status: 'ok' };
       }
-      chrome.storage.local.get([STORAGE_DEVICE], function (result) {
-        if (chrome.runtime.lastError) {
-          if (typeof ShopRadarGuard !== 'undefined' && ShopRadarGuard.safeSendResponse) {
-            ShopRadarGuard.safeSendResponse(sendResponse, { status: 'ok', ok: false });
-          } else {
-            try {
-              sendResponse({ status: 'ok', ok: false });
-            } catch (sendErr) {
-              try {
-                if (chrome.runtime.lastError) {
-                  console.log(
-                    'Ignored extension runtime error:',
-                    chrome.runtime.lastError.message
-                  );
-                }
-              } catch (readErr) {
-                /* port closed */
-              }
-            }
-          }
-          return;
-        }
-        var extId =
-          result && result[STORAGE_DEVICE]
-            ? String(result[STORAGE_DEVICE]).trim()
-            : '';
-        var webId = readWebDeviceId();
-        reconcile(extId, webId);
-        if (typeof ShopRadarGuard !== 'undefined' && ShopRadarGuard.safeSendResponse) {
-          ShopRadarGuard.safeSendResponse(sendResponse, { status: 'ok', ok: true });
-        } else {
+      runReconcileFromStorage();
+      if (typeof ShopRadarGuard !== 'undefined' && ShopRadarGuard.safeSendResponse) {
+        ShopRadarGuard.safeSendResponse(sendResponse, { status: 'ok', ok: true });
+      } else {
+        try {
+          sendResponse({ status: 'ok', ok: true });
+        } catch (sendErr) {
           try {
-            sendResponse({ status: 'ok', ok: true });
-          } catch (sendErr) {
-            try {
-              if (chrome.runtime.lastError) {
-                console.log(
-                  'Ignored extension runtime error:',
-                  chrome.runtime.lastError.message
-                );
-              }
-            } catch (readErr) {
-              /* port closed */
+            if (chrome.runtime.lastError) {
+              console.log(
+                'Ignored extension runtime error:',
+                chrome.runtime.lastError.message
+              );
             }
+          } catch (readErr) {
+            /* port closed */
           }
         }
-      });
+      }
       return true;
     };
 

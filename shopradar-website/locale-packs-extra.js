@@ -134,6 +134,8 @@
       paywallSocial: 'Para vendedores que investigan tiendas antes de listar.',
       paywallCta: 'Mejorar a Pro con Lemon Squeezy',
       paywallFoot: 'Pago seguro · Cancela cuando quieras · Acceso instantáneo',
+      claimProOneDeviceNote:
+        'Una suscripción, un dispositivo activo. Restaurar mueve Pro a este Device ID; otros dispositivos deben restaurar de nuevo.',
     },
     footer: {
       desc: 'Inteligencia de productos Shopify para vendedores cross-border.',
@@ -243,6 +245,8 @@
       paywallSocial: '出品前にストアを調査するセラー向け。',
       paywallCta: 'Lemon Squeezy で Pro にアップグレード',
       paywallFoot: '安全決済 · いつでも解約 · 即時アクセス',
+      claimProOneDeviceNote:
+        '1つのサブスクリプションは同時に1台のデバイスのみ。復元すると Pro はこの Device ID に移り、他のデバイスでは再度メール復元が必要です。',
     },
     footer: {
       desc: '越境セラー向け Shopify 商品インテリジェンス。',
@@ -352,6 +356,8 @@
       paywallSocial: '등록 전에 스토어를 조사하는 셀러를 위해.',
       paywallCta: 'Lemon Squeezy로 Pro 업그레이드',
       paywallFoot: '안전 결제 · 언제든 취소 · 즉시 이용',
+      claimProOneDeviceNote:
+        '구독 1개당 활성 기기 1대입니다. 복원하면 Pro가 이 Device ID로 이동하며, 다른 기기에서는 다시 이메일 복원이 필요합니다.',
     },
     footer: {
       desc: '크로스보더 셀러를 위한 Shopify 상품 인텔리전스.',
@@ -462,6 +468,8 @@
       paywallSocial: 'Para vendedores que pesquisam lojas antes de listar.',
       paywallCta: 'Upgrade Pro com Lemon Squeezy',
       paywallFoot: 'Pagamento seguro · Cancele quando quiser · Acesso instantâneo',
+      claimProOneDeviceNote:
+        'Uma assinatura, um dispositivo ativo. Restaurar move o Pro para este Device ID; outros dispositivos precisam restaurar novamente.',
     },
     footer: {
       desc: 'Inteligência de produtos Shopify para vendedores cross-border.',
@@ -570,6 +578,8 @@
       paywallSocial: '為「先調研店鋪、再上架」的跨境賣家打造。',
       paywallCta: '透過 Lemon Squeezy 升級 Pro',
       paywallFoot: '安全支付 · 隨時取消 · 即時生效',
+      claimProOneDeviceNote:
+        '一個訂閱同時僅在一台裝置生效。在此恢復會將 Pro 綁定到目前 Device ID，其他裝置需重新以信箱恢復。',
     },
     footer: {
       desc: 'Shopify 跨境選品情報工具。停止猜測，用數據選品。',
