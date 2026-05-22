@@ -41,12 +41,16 @@ const {
 } = require('./pro-claim');
 const { mountV1Routes, V1_WEBHOOK_PATH } = require('./routes-v1');
 const { connectRedis, closeRedis, pingRedis } = require('./redis-client');
+const { isProRow } = require('./user-pro');
+const {
+  normalizeDomainKey,
+  evaluateFreeQuota,
+} = require('./quota');
 
 const LEMON_WEBHOOK_PATH = '/api/webhook/lemon-squeezy';
 const LEMON_WEBHOOK_PATHS = new Set([LEMON_WEBHOOK_PATH, V1_WEBHOOK_PATH]);
 
 const PORT = Number(process.env.PORT) || 3000;
-const FREE_DAILY_LIMIT = 3;
 const DB_PATH = process.env.SHOPRADAR_DB_PATH
   ? path.resolve(process.env.SHOPRADAR_DB_PATH)
   : path.join(__dirname, 'database.sqlite');
@@ -56,10 +60,6 @@ const WEBSITE_URL = String(process.env.SHOPRADAR_WEBSITE_URL || 'https://shoprad
   /\/$/,
   ''
 );
-
-/** 额度用尽时的标准提示文案 */
-const LIMIT_EXCEEDED_MSG =
-  '您的每日 3 次免费额度已用完，请升级为 Pro 会员解锁无限次查询与 CSV 导出功能！';
 
 const app = express();
 
@@ -150,9 +150,8 @@ function isWhitelisted(req, deviceId) {
   return { hit: false, by: '', clientIp: normalizeIp(clientIp) };
 }
 
-function getTodayDateString() {
-  return new Date().toISOString().slice(0, 10);
-}
+const { getTodayDateString } = require('./date-utils');
+const { isValidDeviceId } = require('./device-id');
 
 function dbGet(db, sql, params) {
   return new Promise(function (resolve, reject) {
@@ -190,20 +189,60 @@ function dbRun(db, sql, params) {
   });
 }
 
-function isProRow(row) {
-  if (!row || Number(row.is_pro) !== 1) {
-    return false;
+async function resolveCheckLimit(db, req, deviceId, domain, options) {
+  const consumeCount = options.consumeCount;
+  const sessionRenewed = Boolean(options.sessionRenewed);
+
+  const white = isWhitelisted(req, deviceId);
+  if (white.hit) {
+    return {
+      allowed: true,
+      remaining: 999,
+      isPro: false,
+      whitelisted: true,
+      whitelistBy: white.by,
+      domain: domain,
+      sessionRenewed: sessionRenewed,
+    };
   }
-  if (row.pro_expires_at) {
-    const expiresMs = new Date(row.pro_expires_at).getTime();
-    if (Number.isNaN(expiresMs)) {
-      return false;
-    }
-    if (Date.now() > expiresMs) {
-      return false;
-    }
+
+  const today = getTodayDateString();
+  const row = await dbGet(
+    db,
+    'SELECT device_id, count, last_query_date, is_pro, pro_expires_at FROM users WHERE device_id = ?',
+    [deviceId]
+  );
+
+  if (row && isProRow(row)) {
+    return {
+      allowed: true,
+      remaining: 999,
+      isPro: true,
+      domain: domain,
+      sessionRenewed: sessionRenewed,
+    };
   }
-  return true;
+
+  return evaluateFreeQuota({
+    db: db,
+    dbRun: dbRun,
+    row: row,
+    deviceId: deviceId,
+    domain: domain,
+    today: today,
+    consumeCount: consumeCount,
+    sessionRenewed: sessionRenewed,
+  });
+}
+
+/**
+ * 持有有效短期 token 时：刷新会话、不重复扣当日免费次数；isPro 仍以数据库为准
+ */
+async function handleCheckLimitFromSession(db, req, deviceId, domain) {
+  return resolveCheckLimit(db, req, deviceId, domain, {
+    consumeCount: false,
+    sessionRenewed: true,
+  });
 }
 
 function ensureUsersColumn(db, columnName, ddl) {
@@ -243,103 +282,6 @@ async function migrateUsersTable(db) {
     'account_email',
     'ALTER TABLE users ADD COLUMN account_email TEXT'
   );
-}
-
-function normalizeDomainKey(domain) {
-  return String(domain || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^www\./, '');
-}
-
-function computeFreeRemaining(row, today) {
-  if (!row || row.last_query_date !== today) {
-    return FREE_DAILY_LIMIT;
-  }
-  return Math.max(0, FREE_DAILY_LIMIT - Number(row.count || 0));
-}
-
-/**
- * 持有有效短期 token 时：刷新会话、不重复扣当日免费次数；isPro 仍以数据库为准
- */
-async function handleCheckLimitFromSession(db, req, deviceId, domain) {
-  const white = isWhitelisted(req, deviceId);
-  if (white.hit) {
-    return {
-      allowed: true,
-      remaining: 999,
-      isPro: false,
-      whitelisted: true,
-      whitelistBy: white.by,
-      domain: domain,
-      sessionRenewed: true,
-    };
-  }
-
-  const today = getTodayDateString();
-  const row = await dbGet(
-    db,
-    'SELECT device_id, count, last_query_date, is_pro, pro_expires_at FROM users WHERE device_id = ?',
-    [deviceId]
-  );
-
-  if (row && isProRow(row)) {
-    return {
-      allowed: true,
-      remaining: 999,
-      isPro: true,
-      domain: domain,
-      sessionRenewed: true,
-    };
-  }
-
-  if (row && row.last_query_date === today && Number(row.count) >= FREE_DAILY_LIMIT) {
-    return {
-      allowed: false,
-      isPro: false,
-      remaining: 0,
-      msg: LIMIT_EXCEEDED_MSG,
-      domain: domain,
-    };
-  }
-
-  if (!row) {
-    await dbRun(
-      db,
-      'INSERT INTO users (device_id, count, last_query_date, is_pro) VALUES (?, 1, ?, 0)',
-      [deviceId, today]
-    );
-    return {
-      allowed: true,
-      remaining: FREE_DAILY_LIMIT - 1,
-      isPro: false,
-      domain: domain,
-      sessionRenewed: true,
-    };
-  }
-
-  if (row.last_query_date !== today) {
-    await dbRun(
-      db,
-      'UPDATE users SET count = ?, last_query_date = ? WHERE device_id = ?',
-      [1, today, deviceId]
-    );
-    return {
-      allowed: true,
-      remaining: FREE_DAILY_LIMIT - 1,
-      isPro: false,
-      domain: domain,
-      sessionRenewed: true,
-    };
-  }
-
-  return {
-    allowed: true,
-    remaining: computeFreeRemaining(row, today),
-    isPro: false,
-    domain: domain,
-    sessionRenewed: true,
-  };
 }
 
 /**
@@ -470,85 +412,10 @@ async function setProForDevice(db, deviceId) {
  * 【POST /api/check-limit】核心鉴权逻辑
  */
 async function handleCheckLimit(db, req, deviceId, domain) {
-  const white = isWhitelisted(req, deviceId);
-  if (white.hit) {
-    return {
-      allowed: true,
-      remaining: 999,
-      /** 白名单仅免额度，不等于已付费 Pro（导出仍须 is_pro=1） */
-      isPro: false,
-      whitelisted: true,
-      whitelistBy: white.by,
-      domain: domain,
-    };
-  }
-
-  const today = getTodayDateString();
-  const row = await dbGet(
-    db,
-    'SELECT device_id, count, last_query_date, is_pro, pro_expires_at FROM users WHERE device_id = ?',
-    [deviceId]
-  );
-
-  if (row && isProRow(row)) {
-    return {
-      allowed: true,
-      remaining: 999,
-      isPro: true,
-      domain: domain,
-    };
-  }
-
-  if (!row) {
-    await dbRun(
-      db,
-      'INSERT INTO users (device_id, count, last_query_date, is_pro) VALUES (?, 1, ?, 0)',
-      [deviceId, today]
-    );
-    return {
-      allowed: true,
-      remaining: FREE_DAILY_LIMIT - 1,
-      isPro: false,
-      domain: domain,
-    };
-  }
-
-  if (row.last_query_date !== today) {
-    await dbRun(
-      db,
-      'UPDATE users SET count = ?, last_query_date = ? WHERE device_id = ?',
-      [1, today, deviceId]
-    );
-    return {
-      allowed: true,
-      remaining: FREE_DAILY_LIMIT - 1,
-      isPro: false,
-      domain: domain,
-    };
-  }
-
-  if (row.count >= FREE_DAILY_LIMIT) {
-    return {
-      allowed: false,
-      isPro: false,
-      msg: LIMIT_EXCEEDED_MSG,
-      remaining: 0,
-      domain: domain,
-    };
-  }
-
-  const newCount = row.count + 1;
-  await dbRun(db, 'UPDATE users SET count = ? WHERE device_id = ?', [
-    newCount,
-    deviceId,
-  ]);
-
-  return {
-    allowed: true,
-    remaining: FREE_DAILY_LIMIT - newCount,
-    isPro: false,
-    domain: domain,
-  };
+  return resolveCheckLimit(db, req, deviceId, domain, {
+    consumeCount: true,
+    sessionRenewed: false,
+  });
 }
 
 function startServer(db) {
@@ -851,6 +718,9 @@ function startServer(db) {
 
     if (!deviceId) {
       return res.status(400).json({ ok: false, msg: '缺少 deviceId' });
+    }
+    if (!isValidDeviceId(deviceId)) {
+      return res.status(400).json({ ok: false, msg: 'deviceId 格式无效' });
     }
     if (!domain) {
       return res.status(400).json({ ok: false, msg: '缺少 domain' });

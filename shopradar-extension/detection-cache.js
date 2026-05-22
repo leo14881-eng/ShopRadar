@@ -8,7 +8,16 @@ var ShopRadarDetectionCache = (function () {
   var POSITIVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
   function normalizeDomain(domain) {
-    return (domain || '').toLowerCase().trim();
+    if (
+      typeof ShopRadarExtensionAuth !== 'undefined' &&
+      ShopRadarExtensionAuth.normalizeDomainKey
+    ) {
+      return ShopRadarExtensionAuth.normalizeDomainKey(domain);
+    }
+    return String(domain || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^www\./, '');
   }
 
   function isExpired(row) {

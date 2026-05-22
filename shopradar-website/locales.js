@@ -179,6 +179,8 @@ var SHOPRADAR_LOCALES = {
       thYesterday: 'Yesterday Researchers',
       thWeek: '7d Researchers',
       thUrl: 'Store URL',
+      paywallDesc:
+        'Unlock full store URLs and research heat metrics for curated global brands.',
     },
     footer: {
       desc: 'Shopify product intelligence for cross-border sellers. Stop guessing, start data-driven selection.',
@@ -366,6 +368,7 @@ var SHOPRADAR_LOCALES = {
       thYesterday: '昨日研究人数',
       thWeek: '7日研究人数',
       thUrl: '店铺链接',
+      paywallDesc: '升级 Pro 解锁完整店铺链接与热度指标。',
     },
     footer: {
       desc: 'Shopify 跨境选品情报工具。停止猜测，用数据选品。',

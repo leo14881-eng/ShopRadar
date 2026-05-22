@@ -6,22 +6,15 @@
 (function () {
   'use strict';
 
-  var STORAGE_DEVICE = 'sr_device_id';
-  var STORAGE_PRO = 'sr_is_pro';
-  var STORAGE_TOKEN = 'sr_access_token';
-  var STORAGE_TOKEN_EXP = 'sr_token_expires_at';
+  var Auth = ShopRadarExtensionAuth;
+  var KEYS = Auth.KEYS;
+  var STORAGE_DEVICE = KEYS.DEVICE_ID;
+  var STORAGE_PRO = KEYS.IS_PRO;
+  var STORAGE_TOKEN = KEYS.ACCESS_TOKEN;
+  var STORAGE_TOKEN_EXP = KEYS.TOKEN_EXPIRES;
 
   function getApiBase() {
-    if (typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getApiBase) {
-      return ShopRadarEnv.getApiBase();
-    }
-    if (
-      typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
-      SHOPRADAR_EXTENSION_CONFIG.apiBase
-    ) {
-      return String(SHOPRADAR_EXTENSION_CONFIG.apiBase).replace(/\/$/, '');
-    }
-    return 'https://api.shopradar.uk';
+    return Auth.getApiBase();
   }
 
   function readQueryDeviceId() {
@@ -70,16 +63,7 @@
   }
 
   function tokenExpiresAt(payload) {
-    if (!payload) {
-      return 0;
-    }
-    if (payload.tokenExpiresAt != null) {
-      return Number(payload.tokenExpiresAt) || 0;
-    }
-    if (payload.tokenExpiresIn != null) {
-      return Date.now() + Number(payload.tokenExpiresIn) * 1000;
-    }
-    return 0;
+    return Auth.tokenExpiresAt(payload);
   }
 
   function publishToWebsite(deviceId, payload) {
@@ -132,12 +116,14 @@
       callback(false);
       return;
     }
-    chrome.storage.session.get(['sr_payment_pending_at'], function (sess) {
+    chrome.storage.session.get([KEYS.PAYMENT_PENDING], function (sess) {
       if (chrome.runtime.lastError) {
         callback(false);
         return;
       }
-      var pendingAt = Number(sess && sess.sr_payment_pending_at ? sess.sr_payment_pending_at : 0);
+      var pendingAt = Number(
+        sess && sess[KEYS.PAYMENT_PENDING] ? sess[KEYS.PAYMENT_PENDING] : 0
+      );
       callback(pendingAt > 0 && Date.now() - pendingAt < 5 * 60 * 1000);
     });
   }
@@ -193,13 +179,7 @@
             return;
           }
           if (payload && payload.isPro && payload.accessToken && chrome.storage.session) {
-            var sessionPatch = {};
-            sessionPatch[STORAGE_TOKEN] = String(payload.accessToken);
-            var exp = tokenExpiresAt(payload);
-            if (exp) {
-              sessionPatch[STORAGE_TOKEN_EXP] = exp;
-            }
-            chrome.storage.session.set(sessionPatch, function () {
+            Auth.saveAccessTokenFromPayload(payload).then(function () {
               notifyExtension(deviceId, payload);
             });
           } else {

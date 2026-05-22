@@ -13,21 +13,12 @@
 var ShopRadarIngest = (function () {
   'use strict';
 
-  var STORAGE_DEVICE_ID_KEY = 'sr_device_id';
+  var Auth = ShopRadarExtensionAuth;
   var INGEST_PATH = '/api/ingest/products';
-  var MAX_PRODUCTS = 50;
+  var MAX_PRODUCTS = Auth.MAX_INGEST_PRODUCTS;
 
   function getApiBase() {
-    if (typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getApiBase) {
-      return ShopRadarEnv.getApiBase();
-    }
-    if (
-      typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
-      SHOPRADAR_EXTENSION_CONFIG.apiBase
-    ) {
-      return String(SHOPRADAR_EXTENSION_CONFIG.apiBase).replace(/\/$/, '');
-    }
-    return 'https://api.shopradar.uk';
+    return Auth.getApiBase();
   }
 
   function debugLog() {
@@ -97,17 +88,7 @@ var ShopRadarIngest = (function () {
   }
 
   async function getDeviceId() {
-    if (!chrome.storage || !chrome.storage.local) {
-      return '';
-    }
-    try {
-      var stored = await chrome.storage.local.get(STORAGE_DEVICE_ID_KEY);
-      return stored[STORAGE_DEVICE_ID_KEY]
-        ? String(stored[STORAGE_DEVICE_ID_KEY])
-        : '';
-    } catch (err) {
-      return '';
-    }
+    return Auth.getDeviceId();
   }
 
   /**

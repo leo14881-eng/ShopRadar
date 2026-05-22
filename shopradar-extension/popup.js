@@ -342,15 +342,16 @@ const LEMON_SQUEEZY_CHECKOUT_URL =
 /** 当前会话是否已为 Pro（鉴权接口返回 isPro） */
 let isProSubscriber = false;
 
-/** chrome.storage 中持久化设备 ID 的键名 */
-const STORAGE_DEVICE_ID_KEY = 'sr_device_id';
+/** 共享鉴权模块 — storage keys 与 token 读写见 extension-auth.js */
+const ExtAuth = ShopRadarExtensionAuth;
+const STORAGE_DEVICE_ID_KEY = ExtAuth.KEYS.DEVICE_ID;
 /** 本机已确认为 Pro 时写入，避免每次打开侧边栏重复触发二次 init */
-const STORAGE_IS_PRO_KEY = 'sr_is_pro';
+const STORAGE_IS_PRO_KEY = ExtAuth.KEYS.IS_PRO;
 /** 服务端签发的短期访问令牌（仅存当前浏览器会话） */
-const STORAGE_ACCESS_TOKEN_KEY = 'sr_access_token';
-const STORAGE_TOKEN_EXPIRES_KEY = 'sr_token_expires_at';
+const STORAGE_ACCESS_TOKEN_KEY = ExtAuth.KEYS.ACCESS_TOKEN;
+const STORAGE_TOKEN_EXPIRES_KEY = ExtAuth.KEYS.TOKEN_EXPIRES;
 /** 打开 Lemon 结账后写入，用于 Webhook 延迟期间的 Pro 轮询 */
-const STORAGE_PAYMENT_PENDING_KEY = 'sr_payment_pending_at';
+const STORAGE_PAYMENT_PENDING_KEY = ExtAuth.KEYS.PAYMENT_PENDING;
 const PAYMENT_PENDING_MS = 5 * 60 * 1000;
 /** 后台 Pro 轮询代次（切换 init 时可取消） */
 let backgroundProPollGeneration = 0;
@@ -965,33 +966,11 @@ function applyUiStrings() {
 }
 
 /**
- * 生成 UUID v4（设备唯一标识）
- * @returns {string}
- */
-function generateDeviceUuid() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
-    const rand = (Math.random() * 16) | 0;
-    const value = char === 'x' ? rand : (rand & 0x3) | 0x8;
-    return value.toString(16);
-  });
-}
-
-/**
  * 从 chrome.storage.local 读取或创建持久化设备 ID
  * @returns {Promise<string>}
  */
 async function getOrCreateDeviceId() {
-  const stored = await chrome.storage.local.get(STORAGE_DEVICE_ID_KEY);
-  if (stored[STORAGE_DEVICE_ID_KEY]) {
-    return String(stored[STORAGE_DEVICE_ID_KEY]);
-  }
-
-  const deviceId = generateDeviceUuid();
-  await chrome.storage.local.set({ [STORAGE_DEVICE_ID_KEY]: deviceId });
-  return deviceId;
+  return ExtAuth.getOrCreateDeviceId();
 }
 
 function setExportButtonVisible(visible) {
@@ -1262,55 +1241,15 @@ async function checkQueryLimit(deviceId, domain) {
 }
 
 async function getStoredAccessToken() {
-  try {
-    const stored = await chrome.storage.session.get([
-      STORAGE_ACCESS_TOKEN_KEY,
-      STORAGE_TOKEN_EXPIRES_KEY,
-    ]);
-    const token = stored[STORAGE_ACCESS_TOKEN_KEY];
-    const expiresAt = Number(stored[STORAGE_TOKEN_EXPIRES_KEY] || 0);
-    if (!token) {
-      return '';
-    }
-    if (expiresAt && expiresAt < Date.now()) {
-      await clearStoredAccessToken();
-      return '';
-    }
-    return String(token);
-  } catch (sessionErr) {
-    return '';
-  }
+  return ExtAuth.getStoredAccessToken();
 }
 
 async function saveAccessTokenFromPayload(payload) {
-  if (!payload || !payload.accessToken) {
-    return;
-  }
-  const expiresAt =
-    payload.tokenExpiresAt != null
-      ? Number(payload.tokenExpiresAt)
-      : payload.tokenExpiresIn != null
-        ? Date.now() + Number(payload.tokenExpiresIn) * 1000
-        : 0;
-  try {
-    await chrome.storage.session.set({
-      [STORAGE_ACCESS_TOKEN_KEY]: String(payload.accessToken),
-      [STORAGE_TOKEN_EXPIRES_KEY]: expiresAt || 0,
-    });
-  } catch (sessionErr) {
-    console.warn('[ShopRadar] 保存 accessToken 失败:', sessionErr);
-  }
+  return ExtAuth.saveAccessTokenFromPayload(payload);
 }
 
 async function clearStoredAccessToken() {
-  try {
-    await chrome.storage.session.remove([
-      STORAGE_ACCESS_TOKEN_KEY,
-      STORAGE_TOKEN_EXPIRES_KEY,
-    ]);
-  } catch (sessionErr) {
-    /* ignore */
-  }
+  return ExtAuth.clearStoredAccessToken();
 }
 
 async function checkQueryLimitOnce(deviceId, domain) {
@@ -1501,12 +1440,7 @@ async function isPersistedProSubscriber() {
   if (isProSubscriber) {
     return true;
   }
-  try {
-    const stored = await chrome.storage.local.get(STORAGE_IS_PRO_KEY);
-    return stored[STORAGE_IS_PRO_KEY] === true;
-  } catch (storageErr) {
-    return false;
-  }
+  return ExtAuth.isPersistedPro();
 }
 
 /** 当前是否已确认 Pro（服务端或本地持久化，不含「刚点结账未付款」） */
@@ -1550,15 +1484,20 @@ async function isPaymentRecentlyPending() {
  * @returns {Promise<boolean>}
  */
 async function pollProActivationAfterCheckout(maxWaitMs) {
-  const deadline = Date.now() + (maxWaitMs || 30000);
-  while (Date.now() < deadline) {
-    const ok = await refreshProStatusWithWebsiteSync({ skipResume: true });
-    if (ok || (await isPersistedProSubscriber())) {
-      await clearPaymentPending();
-      hideLimitOverlay();
-      return true;
-    }
-    await delay(2000);
+  const activated = await ExtAuth.pollUntil(
+    async function () {
+      const ok = await refreshProStatusWithWebsiteSync({ skipResume: true });
+      if (ok || (await isPersistedProSubscriber())) {
+        await clearPaymentPending();
+        hideLimitOverlay();
+        return true;
+      }
+      return false;
+    },
+    { timeoutMs: maxWaitMs || 30000, intervalMs: 2000 }
+  );
+  if (activated) {
+    return true;
   }
   await loadProFlagFromStorage();
   return await isPersistedProSubscriber();
@@ -1575,23 +1514,22 @@ function startBackgroundProPollIfPending(runId) {
     }
     backgroundProPollGeneration += 1;
     const pollGen = backgroundProPollGeneration;
-    (async function () {
-      const deadline = Date.now() + 90000;
-      while (
-        Date.now() < deadline &&
-        pollGen === backgroundProPollGeneration &&
-        runId === initRunId
-      ) {
+    ExtAuth.pollUntil(
+      async function () {
+        if (pollGen !== backgroundProPollGeneration || runId !== initRunId) {
+          return false;
+        }
         const ok = await refreshProStatusWithWebsiteSync({ skipResume: true });
         if (ok && (await hasProAccess())) {
           await clearPaymentPending();
           hideLimitOverlay();
           schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
-          return;
+          return true;
         }
-        await delay(3000);
-      }
-    })().catch(function () {});
+        return false;
+      },
+      { timeoutMs: 90000, intervalMs: 3000 }
+    ).catch(function () {});
   });
 }
 
@@ -1635,40 +1573,11 @@ async function ensureQueryAllowed(domain) {
  * @returns {string|null}
  */
 function buildLemonSqueezyCheckoutUrl(deviceId) {
-  const base = (LEMON_SQUEEZY_CHECKOUT_URL || '').trim();
-  if (
-    !base ||
-    base.indexOf('your-store') !== -1 ||
-    base.indexOf('xxxxxxxx') !== -1 ||
-    !/^https:\/\/[^/]+\.lemonsqueezy\.com\//i.test(base)
-  ) {
-    return null;
-  }
-
-  try {
-    const url = new URL(base);
-    url.searchParams.set('checkout[custom][device_id]', deviceId);
-    url.searchParams.set('checkout[custom][source]', 'shopradar_extension');
-    const websiteBase = (SHOPRADAR_WEBSITE_URL || 'https://shopradar.uk').replace(
-      /\/$/,
-      ''
-    );
-    url.searchParams.set(
-      'checkout[redirect_url]',
-      websiteBase +
-        '/success.html?deviceId=' +
-        encodeURIComponent(deviceId)
-    );
-    return url.toString();
-  } catch (urlError) {
-    const sep = base.indexOf('?') >= 0 ? '&' : '?';
-    return (
-      base +
-      sep +
-      'checkout%5Bcustom%5D%5Bdevice_id%5D=' +
-      encodeURIComponent(deviceId)
-    );
-  }
+  return ExtAuth.buildLemonCheckoutUrl(deviceId, {
+    checkoutBase: LEMON_SQUEEZY_CHECKOUT_URL,
+    source: 'shopradar_extension',
+    websiteBase: SHOPRADAR_WEBSITE_URL,
+  });
 }
 
 async function loadProFlagFromStorage() {
@@ -1685,12 +1594,7 @@ async function loadProFlagFromStorage() {
 
 async function persistProFlag(isPro) {
   try {
-    if (isPro) {
-      await chrome.storage.local.set({ [STORAGE_IS_PRO_KEY]: true });
-    } else {
-      await chrome.storage.local.remove(STORAGE_IS_PRO_KEY);
-      await clearStoredAccessToken();
-    }
+    await ExtAuth.persistProFlag(isPro);
   } catch (storageErr) {
     console.warn('[ShopRadar] 写入 Pro 缓存失败:', storageErr);
   }
@@ -2839,34 +2743,36 @@ function isNonShopBrowseContext(tab) {
  * 支付完成后在 Lemon 页轮询本机 Pro 状态（等待 Webhook 写入）
  */
 async function pollProActivationAfterPayment(runId, maxWaitMs) {
-  const deadline = Date.now() + (maxWaitMs || 20000);
   const prevLoadingText = loadingTextEl ? loadingTextEl.textContent : '';
 
-  while (Date.now() < deadline) {
-    if (runId !== initRunId) {
-      return false;
-    }
-
-    if (loadingTextEl) {
-      loadingTextEl.textContent = UI_TEXT.paymentConfirming;
-    }
-
-    const ok = await refreshProStatusWithWebsiteSync({ skipResume: true });
-    if (ok && (await hasProAccess())) {
-      await clearPaymentPending();
-      if (typeof ShopRadarLemonReturn !== 'undefined') {
-        await ShopRadarLemonReturn.returnToShopAfterPayment();
+  const activated = await ExtAuth.pollUntil(
+    async function () {
+      if (runId !== initRunId) {
+        return false;
       }
       if (loadingTextEl) {
-        loadingTextEl.textContent = prevLoadingText || UI_TEXT.loading;
+        loadingTextEl.textContent = UI_TEXT.paymentConfirming;
       }
-      schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
-      return true;
-    }
+      const ok = await refreshProStatusWithWebsiteSync({ skipResume: true });
+      if (ok && (await hasProAccess())) {
+        await clearPaymentPending();
+        if (typeof ShopRadarLemonReturn !== 'undefined') {
+          await ShopRadarLemonReturn.returnToShopAfterPayment();
+        }
+        if (loadingTextEl) {
+          loadingTextEl.textContent = prevLoadingText || UI_TEXT.loading;
+        }
+        schedulePanelRefresh({ forceRecheck: true, softRefresh: true });
+        return true;
+      }
+      return false;
+    },
+    { timeoutMs: maxWaitMs || 20000, intervalMs: 2000 }
+  );
 
-    await delay(2000);
+  if (activated) {
+    return true;
   }
-
   if (loadingTextEl) {
     loadingTextEl.textContent = prevLoadingText || UI_TEXT.loading;
   }

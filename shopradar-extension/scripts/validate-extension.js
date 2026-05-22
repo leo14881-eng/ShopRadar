@@ -52,6 +52,7 @@ const RUNTIME_JS_FILES = [
   'extension-config.js',
   'extension-env.js',
   'extension-guard.js',
+  'extension-auth.js',
   'shop-permissions.js',
   'shop-processor.js',
   'shop-url.js',

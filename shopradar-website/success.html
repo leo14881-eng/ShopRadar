@@ -24,104 +24,46 @@
   </div>
 
   <script src="website-config.js"></script>
+  <script src="auth-shared.js"></script>
   <script>
     (function () {
       'use strict';
 
-      var CFG = window.SHOPRADAR_WEBSITE_CONFIG || {};
-      var API_BASE = String(CFG.apiBase || '').replace(/\/$/, '');
-      var STORAGE_DEVICE_ID = 'sr_device_id';
-
-      function getDeviceId() {
-        try {
-          var params = new URLSearchParams(window.location.search);
-          var fromQuery = params.get('deviceId') || params.get('device_id');
-          if (fromQuery) {
-            localStorage.setItem(STORAGE_DEVICE_ID, fromQuery);
-            return fromQuery;
-          }
-          return localStorage.getItem(STORAGE_DEVICE_ID) || '';
-        } catch (e) {
-          return '';
-        }
-      }
-
-      function delay(ms) {
-        return new Promise(function (r) { setTimeout(r, ms); });
-      }
-
-      var STORAGE_DEVICE_ID = 'sr_device_id';
-      var STORAGE_ACCESS_TOKEN = 'sr_access_token';
-      var STORAGE_TOKEN_EXPIRES = 'sr_token_expires_at';
-
-      function saveAccessTokenFromPayload(payload) {
-        if (!payload || !payload.accessToken) {
-          return;
-        }
-        try {
-          sessionStorage.setItem(STORAGE_ACCESS_TOKEN, String(payload.accessToken));
-          var exp =
-            payload.tokenExpiresAt != null
-              ? Number(payload.tokenExpiresAt)
-              : payload.tokenExpiresIn != null
-                ? Date.now() + Number(payload.tokenExpiresIn) * 1000
-                : 0;
-          if (exp) {
-            sessionStorage.setItem(STORAGE_TOKEN_EXPIRES, String(exp));
-          }
-        } catch (e) {
-          /* ignore */
-        }
-      }
-
-      function fetchPro(deviceId) {
-        return fetch(API_BASE + '/api/pro-status?deviceId=' + encodeURIComponent(deviceId))
-          .then(function (res) {
-            return res.json().catch(function () {
-              return { isPro: false };
-            });
-          })
-          .then(function (data) {
-            saveAccessTokenFromPayload(data);
-            return Boolean(data && data.isPro);
-          })
-          .catch(function () {
-            return false;
-          });
-      }
+      var Auth = window.ShopRadarAuth;
 
       async function run() {
-        var deviceId = getDeviceId();
         var statusEl = document.getElementById('status-text');
-        var websiteUrl = String(CFG.websiteUrl || window.location.origin).replace(/\/$/, '');
-        var target =
-          websiteUrl +
-          '/index.html?paid=1&deviceId=' +
-          encodeURIComponent(deviceId) +
-          '#dashboard';
+        var deviceId = Auth.getOrCreateDeviceId({ deferCreate: true });
+        var websiteUrl = Auth.buildWebsiteOrigin();
+        var target = deviceId
+          ? Auth.buildPaymentSuccessTarget(deviceId)
+          : websiteUrl + '/index.html#dashboard';
 
         if (!deviceId) {
-          if (statusEl) statusEl.textContent = 'Device ID not found. Redirecting to dashboard…';
-          await delay(1500);
+          if (statusEl) {
+            statusEl.textContent = 'Device ID not found. Redirecting to dashboard…';
+          }
+          await Auth.delay(1500);
           window.location.href = websiteUrl + '/index.html#dashboard';
           return;
         }
 
-        var deadline = Date.now() + 30000;
-        while (Date.now() < deadline) {
-          if (await fetchPro(deviceId)) {
-            try { localStorage.setItem('sr_is_pro', '1'); } catch (e) {}
-            if (statusEl) statusEl.textContent = 'Pro activated! Redirecting…';
-            await delay(800);
-            window.location.href = target;
-            return;
-          }
-          if (statusEl) statusEl.textContent = 'Waiting for payment confirmation…';
-          await delay(2000);
-        }
+        var activated = await Auth.pollUntilProActivated(deviceId, {
+          timeoutMs: 30000,
+          intervalMs: 2000,
+          onWaiting: function () {
+            if (statusEl) {
+              statusEl.textContent = 'Waiting for payment confirmation…';
+            }
+          },
+        });
 
-        if (statusEl) statusEl.textContent = 'Taking longer than expected. Redirecting anyway…';
-        await delay(1200);
+        if (statusEl) {
+          statusEl.textContent = activated
+            ? 'Pro activated! Redirecting…'
+            : 'Taking longer than expected. Redirecting anyway…';
+        }
+        await Auth.delay(activated ? 800 : 1200);
         window.location.href = target;
       }
 

@@ -17,6 +17,7 @@ const WATCH_FILES = [
   'extension-env.js',
   'extension-env.production.js',
   'extension-guard.js',
+  'extension-auth.js',
   'shop-permissions.js',
   'shop-processor.js',
   'shop-url.js',

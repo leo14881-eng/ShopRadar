@@ -167,7 +167,7 @@
         </p>
 
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-          <a href="https://chromewebstore.google.com/detail/shopradar/PLACEHOLDER" target="_blank" rel="noopener noreferrer"
+          <a href="#" target="_blank" rel="noopener noreferrer"
              id="chrome-store-cta"
              class="js-chrome-store inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-white text-radar-950 font-semibold text-base hover:bg-gray-100 transition-colors shadow-xl shadow-white/10">
             <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
@@ -333,7 +333,7 @@
             Install once, open any Shopify or SFCC store, and inspect the full product catalog in seconds. Anonymous scans power the research heat rankings below.
           </p>
           <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8">
-            <a href="https://chromewebstore.google.com/detail/shopradar/PLACEHOLDER" target="_blank" rel="noopener noreferrer"
+            <a href="#" target="_blank" rel="noopener noreferrer"
                class="js-chrome-store inline-flex items-center gap-2.5 px-7 py-3.5 rounded-xl bg-white text-radar-950 font-semibold text-sm hover:bg-gray-100 transition-colors shadow-lg shadow-white/10">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
               <span data-i18n="guide.ctaInstall">Install Extension — Free</span>
@@ -637,6 +637,18 @@
               <tbody id="famous-stores-table-body" class="divide-y divide-white/5"></tbody>
             </table>
           </div>
+
+          <div id="famous-stores-paywall-overlay" class="hidden absolute inset-0 flex items-center justify-center bg-radar-950/40 backdrop-blur-sm">
+            <div class="text-center px-6 py-8 max-w-sm mx-4 rounded-2xl glass border border-radar-violet/20 shadow-xl">
+              <h3 class="font-display text-lg font-bold mb-2" data-i18n="dashboard.paywallTitle">Pro Data Locked</h3>
+              <p class="text-subtle text-xs mb-5 leading-relaxed" data-i18n="famousStores.paywallDesc">
+                Unlock full store URLs and research heat metrics for curated global brands.
+              </p>
+              <a href="#" class="js-upgrade-pro inline-flex items-center gap-2 px-6 py-3 rounded-xl cta-shine text-radar-950 font-bold text-sm hover:scale-105 transition-transform">
+                <span data-i18n="dashboard.paywallCta">Upgrade to Pro with Lemon Squeezy</span>
+              </a>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -662,8 +674,8 @@
           <p class="text-muted text-sm leading-relaxed mb-6" data-i18n="footer.desc">
             Shopify product intelligence for cross-border sellers. Stop guessing, start data-driven selection.
           </p>
-          <a href="https://chromewebstore.google.com/detail/shopradar/PLACEHOLDER" target="_blank" rel="noopener noreferrer"
-             class="js-chrome-store inline-flex items-center gap-2 px-5 py-2.5 rounded-lg glass text-sm font-medium text-subtle hover:text-white hover:border-radar-cyan/30 transition-colors">
+            <a href="#" target="_blank" rel="noopener noreferrer"
+               class="js-chrome-store inline-flex items-center gap-2 px-5 py-2.5 rounded-lg glass text-sm font-medium text-subtle hover:text-white hover:border-radar-cyan/30 transition-colors">
             <svg class="w-5 h-5 text-radar-cyan" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
             </svg>
@@ -708,6 +720,7 @@
   <script src="locale-packs-extra.js"></script>
   <script src="i18n.js"></script>
   <script src="website-config.js"></script>
+  <script src="auth-shared.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

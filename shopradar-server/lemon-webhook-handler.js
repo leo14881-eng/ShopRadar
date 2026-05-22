@@ -158,9 +158,7 @@ function defaultProExpiresAtIso() {
   return date.toISOString();
 }
 
-function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
-}
+const { normalizeEmail } = require('./email-utils');
 
 /**
  * @param {import('sqlite3').Database} db

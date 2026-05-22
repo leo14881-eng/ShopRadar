@@ -17,6 +17,7 @@ const INCLUDE_FILES = [
   'extension-config.js',
   'extension-env.js',
   'extension-guard.js',
+  'extension-auth.js',
   'shop-permissions.js',
   'popup.html',
   'popup.js',

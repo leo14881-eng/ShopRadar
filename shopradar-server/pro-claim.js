@@ -4,11 +4,7 @@
  * 付款邮箱 ↔ Device ID 认领（Webhook 未携带 device_id 或 account_email 未写入时的补救）
  */
 
-function normalizeEmail(email) {
-  return String(email || '')
-    .trim()
-    .toLowerCase();
-}
+const { normalizeEmail } = require('./email-utils');
 
 async function migratePendingProClaimsTable(db, dbRun) {
   await dbRun(

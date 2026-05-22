@@ -741,6 +741,16 @@ async function testTrendingAndIngest() {
   });
   assert('ingest 缺 deviceId → 400', ingestBad.status === 400);
 
+  const ingestInvalidDevice = await request('/api/ingest/products', {
+    method: 'POST',
+    body: {
+      deviceId: 'bad id!',
+      domain: 'bad.myshopify.com',
+      products: [{ title: 'X', shopifyId: 1 }],
+    },
+  });
+  assert('ingest 无效 deviceId → 400', ingestInvalidDevice.status === 400);
+
   const legacy = await request(
     '/api/trending?deviceId=' + encodeURIComponent(IDS.free) + '&limit=3'
   );
@@ -898,8 +908,8 @@ async function testRegressionFixes(secret) {
   const { computeGrowth7d } = require('../trending');
   assert(
     'growth_7d 不重复计入 today',
-    computeGrowth7d(5, 10, 5) === 1,
-    'got ' + computeGrowth7d(5, 10, 5)
+    computeGrowth7d(10, 5) === 1,
+    'got ' + computeGrowth7d(10, 5)
   );
 
   const expiredDevice = 'flow-expired-' + RUN_ID;

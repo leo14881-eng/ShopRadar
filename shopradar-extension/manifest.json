@@ -49,6 +49,7 @@
         "extension-config.js",
         "extension-env.js",
         "extension-guard.js",
+        "extension-auth.js",
         "website-device-sync.js"
       ],
       "run_at": "document_start"

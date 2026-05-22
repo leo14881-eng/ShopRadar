@@ -4,13 +4,11 @@
 var ShopRadarLemonReturn = (function () {
   'use strict';
 
+  var Auth = ShopRadarExtensionAuth;
+
   var RETURN_TAB_KEY = 'sr_lemon_return_tab_id';
   var RETURN_URL_KEY = 'sr_lemon_return_url';
   var CHECKOUT_TAB_KEY = 'sr_lemon_checkout_tab_id';
-  var STORAGE_DEVICE = 'sr_device_id';
-  var STORAGE_PRO = 'sr_is_pro';
-  var STORAGE_TOKEN = 'sr_access_token';
-  var STORAGE_TOKEN_EXP = 'sr_token_expires_at';
 
   var backgroundPollTimer = null;
   var backgroundPollActive = false;
@@ -61,94 +59,13 @@ var ShopRadarLemonReturn = (function () {
   }
 
   function getApiBase() {
-    if (typeof ShopRadarEnv !== 'undefined' && ShopRadarEnv.getApiBase) {
-      return ShopRadarEnv.getApiBase();
-    }
-    if (
-      typeof SHOPRADAR_EXTENSION_CONFIG !== 'undefined' &&
-      SHOPRADAR_EXTENSION_CONFIG.apiBase
-    ) {
-      return String(SHOPRADAR_EXTENSION_CONFIG.apiBase).replace(/\/$/, '');
-    }
-    return 'https://api.shopradar.uk';
+    return Auth.getApiBase();
   }
 
   function delay(ms) {
     return new Promise(function (resolve) {
       setTimeout(resolve, ms);
     });
-  }
-
-  function tokenExpiresAt(payload) {
-    if (!payload) {
-      return 0;
-    }
-    if (payload.tokenExpiresAt != null) {
-      return Number(payload.tokenExpiresAt) || 0;
-    }
-    if (payload.tokenExpiresIn != null) {
-      return Date.now() + Number(payload.tokenExpiresIn) * 1000;
-    }
-    return 0;
-  }
-
-  async function saveAccessTokenFromPayload(payload) {
-    if (!payload || !payload.accessToken || !chrome.storage || !chrome.storage.session) {
-      return;
-    }
-    var exp = tokenExpiresAt(payload);
-    try {
-      var patch = {};
-      patch[STORAGE_TOKEN] = String(payload.accessToken);
-      patch[STORAGE_TOKEN_EXP] = exp || 0;
-      await chrome.storage.session.set(patch);
-    } catch (tokenErr) {
-      /* ignore */
-    }
-  }
-
-  async function saveProFromPayload(payload) {
-    if (!payload || !payload.isPro || !chrome.storage || !chrome.storage.local) {
-      return;
-    }
-    try {
-      await chrome.storage.local.set({ [STORAGE_PRO]: true });
-    } catch (persistErr) {
-      /* ignore */
-    }
-    await saveAccessTokenFromPayload(payload);
-  }
-
-  async function getStoredAccessToken() {
-    if (!chrome.storage || !chrome.storage.session) {
-      return '';
-    }
-    try {
-      var stored = await chrome.storage.session.get([STORAGE_TOKEN, STORAGE_TOKEN_EXP]);
-      var token = stored[STORAGE_TOKEN];
-      var expiresAt = Number(stored[STORAGE_TOKEN_EXP] || 0);
-      if (!token) {
-        return '';
-      }
-      if (expiresAt && expiresAt < Date.now()) {
-        await chrome.storage.session.remove([STORAGE_TOKEN, STORAGE_TOKEN_EXP]);
-        return '';
-      }
-      return String(token);
-    } catch (readErr) {
-      return '';
-    }
-  }
-
-  async function clearStoredAccessToken() {
-    if (!chrome.storage || !chrome.storage.session) {
-      return;
-    }
-    try {
-      await chrome.storage.session.remove([STORAGE_TOKEN, STORAGE_TOKEN_EXP]);
-    } catch (clearErr) {
-      /* ignore */
-    }
   }
 
   async function fetchProStatusOnce(deviceId, accessToken) {
@@ -170,7 +87,7 @@ var ShopRadarLemonReturn = (function () {
       return false;
     }
     if (data && data.isPro) {
-      await saveProFromPayload(data);
+      await Auth.saveProFromPayload(data);
       return true;
     }
     return false;
@@ -181,17 +98,16 @@ var ShopRadarLemonReturn = (function () {
       return false;
     }
     try {
-      var stored = await chrome.storage.local.get([STORAGE_DEVICE]);
-      var deviceId = stored[STORAGE_DEVICE];
+      var deviceId = await Auth.getDeviceId();
       if (!deviceId) {
         return false;
       }
 
-      var accessToken = await getStoredAccessToken();
+      var accessToken = await Auth.getStoredAccessToken();
       var response = await fetchProStatusOnce(deviceId, accessToken);
 
       if (response.status === 401 && accessToken) {
-        await clearStoredAccessToken();
+        await Auth.clearStoredAccessToken();
         response = await fetchProStatusOnce(deviceId, '');
       }
 

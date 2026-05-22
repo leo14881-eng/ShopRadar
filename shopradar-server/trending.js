@@ -6,7 +6,7 @@ const {
   getFamousStores,
   getFamousStoreDomains,
   getFamousStoreMap,
-  normalizeDomain: normalizeFamousDomain,
+  normalizeDomain,
 } = require('./famous-stores');
 
 const MAX_INGEST_PRODUCTS = 50;
@@ -58,16 +58,7 @@ const TRENDING_RANK_SQL = `
     LIMIT ?
   `;
 
-function normalizeDomain(domain) {
-  return String(domain || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^www\./, '');
-}
-
-function getTodayDateString() {
-  return new Date().toISOString().slice(0, 10);
-}
+const { getTodayDateString } = require('./date-utils');
 
 /** UTC 日历下的「昨日」YYYY-MM-DD（榜单主排序日） */
 function getYesterdayDateString(fromToday) {
@@ -613,7 +604,7 @@ async function ingestProducts(db, deviceId, domain, storeType, currency, product
   };
 }
 
-function computeGrowth7d(todayCount, weekTotal, prevWeekTotal) {
+function computeGrowth7d(weekTotal, prevWeekTotal) {
   const current = Number(weekTotal || 0);
   const previous = Number(prevWeekTotal || 0);
   if (previous <= 0) {
@@ -641,7 +632,6 @@ function buildProductUrl(storeDomain, title) {
 
 function mapGoldenRow(row, index) {
   const growthRatio = computeGrowth7d(
-    row.yesterday_count,
     row.week_total,
     row.prev_week_total
   );
@@ -783,7 +773,6 @@ async function queryTrending(db, opts) {
   const ranked = applyStoreDiversityCap(
     rows.map(function (row, index) {
       const growthRatio = computeGrowth7d(
-        row.yesterday_count,
         row.week_total,
         row.prev_week_total
       );
@@ -861,7 +850,7 @@ function mergeFamousStoreRanking(rows, limit) {
   const byDomain = Object.create(null);
 
   (rows || []).forEach(function (row) {
-    const domain = normalizeFamousDomain(row.store_domain);
+    const domain = normalizeDomain(row.store_domain);
     byDomain[domain] = row;
   });
 

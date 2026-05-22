@@ -17,6 +17,7 @@ const PARTS = [
   'extension-config.js',
   ENV_FILE,
   'extension-guard.js',
+  'extension-auth.js',
   'shop-permissions.js',
   'shop-processor.js',
   'shop-url.js',

@@ -11,7 +11,7 @@
   var LEMON_CHECKOUT =
     'https://shopradar.lemonsqueezy.com/checkout/buy/9a42e638-77ac-440c-ad73-82177b031a90';
   var CHROME_STORE =
-    'https://chromewebstore.google.com/detail/shopradar/PLACEHOLDER';
+    'https://chromewebstore.google.com/detail/shopradar/PLACEHOLDER'; // 上架后替换为真实扩展 ID
 
   /** 线上环境（部署到 shopradar.uk 时使用） */
   var PRODUCTION = {
